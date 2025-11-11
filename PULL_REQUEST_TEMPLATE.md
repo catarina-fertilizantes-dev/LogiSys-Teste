@@ -1,0 +1,1 @@
+Refactors AuthContext, usePermissions, and Admin page to use single role (string) instead of roles array. Changes: userRoles[] → userRole (string | null), uses .maybeSingle() for DB queries, removes array logic. Aligns with SINGLE-ROLE backend migration using update_user_role RPC.
