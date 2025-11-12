@@ -15,6 +15,7 @@ const BodySchema = z.object({
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 Deno.serve(async (req) => {
@@ -152,7 +153,8 @@ Deno.serve(async (req) => {
       headers: { "content-type": "application/json", ...corsHeaders },
     });
   } catch (e) {
-    return new Response(JSON.stringify({ error: "Unexpected error", details: String(e) }), {
+    console.error("Unexpected error:", e);
+    return new Response(JSON.stringify({ error: "Unexpected error occurred while creating user" }), {
       status: 500,
       headers: { "content-type": "application/json", ...corsHeaders },
     });
