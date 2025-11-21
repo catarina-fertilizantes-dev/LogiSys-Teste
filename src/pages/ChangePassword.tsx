@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Lock } from "lucide-react";
+import { passwordSchema } from "@/lib/validationSchemas";
 
 const ChangePassword = () => {
+  const { needsPasswordChange, recoveryMode, clearRecoveryMode } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -16,19 +19,24 @@ const ChangePassword = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // Determine if current password is required
+  const requireCurrentPassword = !recoveryMode && !needsPasswordChange;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate passwords
-    if (newPassword.length < 6) {
+    // Validate new password using schema
+    const passwordResult = passwordSchema.safeParse(newPassword);
+    if (!passwordResult.success) {
       toast({
         variant: "destructive",
         title: "Erro de validação",
-        description: "A nova senha deve ter no mínimo 6 caracteres"
+        description: passwordResult.error.issues[0].message
       });
       return;
     }
 
+    // Validate passwords match
     if (newPassword !== confirmPassword) {
       toast({
         variant: "destructive",
@@ -41,27 +49,28 @@ const ChangePassword = () => {
     setLoading(true);
 
     try {
-      // First verify current password by attempting to sign in
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user?.email) {
-        throw new Error("Usuário não encontrado");
-      }
+      // If current password is required, verify it first
+      if (requireCurrentPassword) {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user?.email) {
+          throw new Error("Usuário não encontrado");
+        }
 
-      // Verify current password
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: currentPassword
-      });
-
-      if (signInError) {
-        toast({
-          variant: "destructive",
-          title: "Erro",
-          description: "Senha atual incorreta"
+        // Verify current password
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: currentPassword
         });
-        setLoading(false);
-        return;
+
+        if (signInError) {
+          toast({
+            variant: "destructive",
+            title: "Erro",
+            description: "Senha atual incorreta"
+          });
+          return;
+        }
       }
 
       // Update password
@@ -71,12 +80,17 @@ const ChangePassword = () => {
 
       if (updateError) throw updateError;
 
-      // Remove force_password_change flag
+      // Remove force_password_change flag if it exists
       const { error: metadataError } = await supabase.auth.updateUser({
         data: { force_password_change: false }
       });
 
       if (metadataError) throw metadataError;
+
+      // Clear recovery mode if active
+      if (recoveryMode) {
+        clearRecoveryMode();
+      }
 
       toast({
         title: "Senha alterada com sucesso!",
@@ -108,23 +122,30 @@ const ChangePassword = () => {
           </div>
           <CardTitle className="text-2xl text-center">Alterar Senha</CardTitle>
           <CardDescription className="text-center">
-            Por segurança, você deve alterar sua senha no primeiro acesso
+            {recoveryMode 
+              ? "Crie uma nova senha para sua conta"
+              : needsPasswordChange 
+                ? "Por segurança, você deve alterar sua senha no primeiro acesso"
+                : "Altere sua senha de acesso"
+            }
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="current-password">Senha Atual</Label>
-              <Input
-                id="current-password"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-                disabled={loading}
-                placeholder="Digite sua senha atual"
-              />
-            </div>
+            {requireCurrentPassword && (
+              <div className="space-y-2">
+                <Label htmlFor="current-password">Senha Atual</Label>
+                <Input
+                  id="current-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  placeholder="Digite sua senha atual"
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="new-password">Nova Senha</Label>
               <Input
