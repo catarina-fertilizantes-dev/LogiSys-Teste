@@ -2,6 +2,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { z } from "https://deno.land/x/zod@v3.23.8/mod.ts";
 
+// Blacklist de senhas fracas
+const WEAK_PASSWORDS = new Set(['123456', '12345678', 'password', 'senha123', 'admin123', 'qwerty']);
+
+// Validar senha gerada
+const validatePassword = (password: string): boolean => {
+  return password.length >= 6 && 
+         password.length <= 128 && 
+         !WEAK_PASSWORDS.has(password.toLowerCase());
+};
+
 const BodySchema = z.object({
   nome: z.string().trim().min(2).max(100),
   email: z.string().trim().email().max(255),
@@ -94,7 +104,27 @@ Deno.serve(async (req) => {
       return senha;
     };
 
-    const senhaTemporaria = gerarSenha();
+    let senhaTemporaria = gerarSenha();
+
+    // Garantir que a senha não está na blacklist (com limite de tentativas)
+    let attempts = 0;
+    const MAX_ATTEMPTS = 10;
+    while (!validatePassword(senhaTemporaria) && attempts < MAX_ATTEMPTS) {
+      senhaTemporaria = gerarSenha();
+      attempts++;
+    }
+
+    // Se após MAX_ATTEMPTS ainda não gerou uma senha válida, retornar erro
+    if (!validatePassword(senhaTemporaria)) {
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: "Não foi possível gerar uma senha válida",
+          stage: "validation"
+        }),
+        { status: 500, headers: { "content-type": "application/json", ...corsHeaders } },
+      );
+    }
 
     // Service role client
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
