@@ -44,9 +44,9 @@ const mapAndFilterColaboradores = (usersData: RpcUserData[]): User[] => {
     if (Array.isArray(u.roles)) {
       if (u.roles.includes('admin')) selectedRole = 'admin';
       else if (u.roles.includes('logistica')) selectedRole = 'logistica';
-      else selectedRole = u.roles[0] ?? null;
+      else selectedRole = u.roles[0] ??  null;
     } else {
-      selectedRole = u.role ?? null;
+      selectedRole = u.role ??  null;
     }
     
     return {
@@ -78,7 +78,7 @@ const Colaboradores = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data: usersData, error: rpcError } = await supabase.rpc(USERS_FUNCTION) as { data: RpcUserData[] | null; error: Error | null };
+      const { data: usersData, error: rpcError } = await supabase. rpc(USERS_FUNCTION) as { data: RpcUserData[] | null; error: Error | null };
       if (rpcError) {
         setError(rpcError.message);
         toast({ 
@@ -110,7 +110,7 @@ const Colaboradores = () => {
   }, []);
 
   const handleCreateUser = async () => {
-    if (!newUserEmail || !newUserNome || !newUserPassword || !newUserRole) {
+    if (!newUserEmail || ! newUserNome || !newUserPassword || !newUserRole) {
       toast({
         variant: "destructive",
         title: "Erro",
@@ -119,20 +119,20 @@ const Colaboradores = () => {
       return;
     }
 
-  // Validar senha usando o schema
-  const passwordValidation = passwordSchema.safeParse(newUserPassword);
-  if (!passwordValidation.success) {
-    const errorMessage = passwordValidation.error.issues[0]?.message || "Senha inválida";
-  
-    console.log('🔍 [DEBUG] Validação de senha falhou:', passwordValidation.error);
-  
-    toast({
-      variant: "destructive",
-      title: "Senha inválida",
-      description: errorMessage
-    });
-    return;
-  }
+    // Validar senha usando o schema
+    const passwordValidation = passwordSchema.safeParse(newUserPassword);
+    if (! passwordValidation.success) {
+      const errorMessage = passwordValidation.error.issues[0]?.message || "Senha inválida";
+    
+      console.log('🔍 [DEBUG] Validação de senha falhou:', passwordValidation.error);
+    
+      toast({
+        variant: "destructive",
+        title: "Senha inválida",
+        description: errorMessage
+      });
+      return;
+    }
 
     try {
       console.log('🔍 [DEBUG] Tentando criar colaborador:', { email: newUserEmail, nome: newUserNome, role: newUserRole });
@@ -154,7 +154,18 @@ const Colaboradores = () => {
         // Tentar extrair detalhes do erro HTTP
         let errorMessage = "Erro ao criar colaborador";
         
-        if (error.message) {
+        // FunctionsHttpError pode ter context com response
+        if (error. context?.body) {
+          try {
+            const errorBody = typeof error.context.body === 'string' 
+              ? JSON. parse(error.context.body) 
+              : error.context. body;
+            
+            errorMessage = errorBody.details || errorBody.error || error.message;
+          } catch (parseError) {
+            errorMessage = error.message || "Erro ao criar colaborador";
+          }
+        } else if (error.message) {
           errorMessage = error.message;
         }
         
@@ -166,27 +177,30 @@ const Colaboradores = () => {
         return;
       }
 
-      if (data?.error || !data?.success) {
+      if (data?.error || ! data?. success) {
         console.error('❌ [ERROR] Erro nos dados retornados:', data);
         
         // Construir mensagem de erro amigável
         let errorMessage = data?.error || "Falha ao criar colaborador";
         
         // Se há detalhes, usar ao invés do erro genérico
-        if (data?.details) {
+        if (data?. details) {
           errorMessage = data.details;
         }
         
         // Mensagens específicas por tipo de erro
         if (data?.stage === 'validation') {
-          if (data?.error?.includes('Weak password')) {
-            errorMessage = "Senha muito fraca. Use pelo menos 6 caracteres e evite senhas comuns como '123456' ou 'senha123'.";
+          if (data?. error?.includes('Weak password')) {
+            errorMessage = "Senha muito fraca. Use pelo menos 6 caracteres e evite senhas comuns como '123456' ou 'senha123'. ";
           } else if (data?.details?.fieldErrors) {
-            errorMessage = "Verifique os campos: " + Object.keys(data.details.fieldErrors).join(', ');
+            errorMessage = "Verifique os campos: " + Object.keys(data.details. fieldErrors).join(', ');
           }
         } else if (data?.stage === 'createUser' && data?.error?.includes('already exists')) {
           errorMessage = "Este email já está cadastrado no sistema.";
-        } else if (data?.stage === 'adminCheck' && data?.error?.includes('Forbidden')) {
+        } else if (data?.stage === 'createColaborador') {
+          // Erro específico ao criar registro em colaboradores (nome duplicado, etc)
+          errorMessage = data?. details || "Falha ao criar registro de colaborador. ";
+        } else if (data?. stage === 'adminCheck' && data?.error?.includes('Forbidden')) {
           errorMessage = "Você não tem permissão para criar usuários.";
         }
         
@@ -201,7 +215,7 @@ const Colaboradores = () => {
       if (data?.success) {
         console.log('✅ [SUCCESS] Colaborador criado com sucesso:', data);
         toast({
-          title: "Colaborador criado com sucesso!",
+          title: "Colaborador criado com sucesso! ",
           description: `${newUserNome} foi adicionado ao sistema com a role ${newUserRole}`
         });
         
@@ -220,7 +234,7 @@ const Colaboradores = () => {
       toast({
         variant: "destructive",
         title: "Erro ao criar colaborador",
-        description: `Exception: ${errorMessage}`
+        description: errorMessage
       });
     }
   };
@@ -236,7 +250,7 @@ const Colaboradores = () => {
       });
     } else {
       toast({
-        title: "Role atualizada!",
+        title: "Role atualizada! ",
         description: "Permissões do usuário foram atualizadas"
       });
       fetchUsers();
@@ -253,7 +267,7 @@ const Colaboradores = () => {
     return labels[role] || role;
   };
 
-  if (!hasRole('admin')) {
+  if (! hasRole('admin')) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Card className="max-w-md">
@@ -275,7 +289,7 @@ const Colaboradores = () => {
     <div className="min-h-screen bg-background">
       <PageHeader
         title="Colaboradores"
-        description="Gerencie colaboradores do sistema (Admin e Logística). Roles exibidas são provenientes de user_roles."
+        description="Gerencie colaboradores do sistema (Admin e Logística).  Roles exibidas são provenientes de user_roles."
         actions={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -288,7 +302,7 @@ const Colaboradores = () => {
               <DialogHeader>
                 <DialogTitle>Criar Novo Colaborador</DialogTitle>
                 <DialogDescription>
-                  Crie um novo colaborador (Admin ou Logística). Clientes e armazéns são criados em suas respectivas páginas.
+                  Crie um novo colaborador (Admin ou Logística).  Clientes e armazéns são criados em suas respectivas páginas.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -297,7 +311,7 @@ const Colaboradores = () => {
                   <Input
                     id="nome"
                     value={newUserNome}
-                    onChange={(e) => setNewUserNome(e.target.value)}
+                    onChange={(e) => setNewUserNome(e.target. value)}
                     placeholder="Nome do usuário"
                   />
                 </div>
@@ -307,7 +321,7 @@ const Colaboradores = () => {
                     id="email"
                     type="email"
                     value={newUserEmail}
-                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    onChange={(e) => setNewUserEmail(e. target.value)}
                     placeholder="email@exemplo.com"
                   />
                 </div>
@@ -321,7 +335,7 @@ const Colaboradores = () => {
                     placeholder="Senha segura"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Mínimo 6 caracteres. Evite senhas comuns como '123456' ou 'senha123'.
+                    Mínimo 6 caracteres.  Evite senhas comuns como '123456' ou 'senha123'.
                   </p>
                 </div>
                  <div className="space-y-2">
@@ -404,7 +418,7 @@ const Colaboradores = () => {
                       <p className="text-xs text-muted-foreground mt-1">
                         Criado em {new Date(user.created_at).toLocaleDateString('pt-BR')}
                       </p>
-                      {!user.role && (
+                      {! user.role && (
                         <p className="text-xs text-destructive mt-1">
                           ⚠️ Sem role - contate administrador
                         </p>
@@ -419,7 +433,7 @@ const Colaboradores = () => {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {!user.role && <SelectItem value="">Selecione uma role</SelectItem>}
+                        {! user.role && <SelectItem value="">Selecione uma role</SelectItem>}
                         <SelectItem value="admin">Administrador</SelectItem>
                         <SelectItem value="logistica">Logística</SelectItem>
                         <SelectItem value="armazem">Armazém</SelectItem>
