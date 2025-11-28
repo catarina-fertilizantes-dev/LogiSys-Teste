@@ -203,23 +203,32 @@ const Colaboradores = () => {
         
         if (data) {
           // Extract error message from backend response
-          if (data.details) {
+          let rawDetails = data.details || data.error || "";
+  
+          // Traduzir mensagens comuns do Supabase em inglês
+          if (rawDetails.includes('already been registered') || rawDetails.includes('already exists')) {
+            errorMessage = "Este email já está cadastrado no sistema.";
+          } else if (data.details) {
             errorMessage = data.details;
           } else if (data.error) {
             errorMessage = data.error;
           }
-          
-          // Specific messages by stage
+  
+          // Specific messages by stage (sobrescreve tradução genérica se necessário)
           if (data.stage === 'validation' && data.error?.includes('Weak password')) {
             errorMessage = "Senha muito fraca. Use pelo menos 6 caracteres e evite senhas comuns.";
-          } else if (data.stage === 'createUser' && data.error?.includes('already exists')) {
-            errorMessage = "Este email já está cadastrado no sistema.";
+          } else if (data. stage === 'createUser') {
+            // Mensagens específicas de criação de usuário
+            if (rawDetails.includes('already been registered') || rawDetails.includes('already exists')) {
+              errorMessage = "Este email já está cadastrado no sistema.";
+            }
           } else if (data.stage === 'createColaborador') {
-            // Nome duplicado ou email duplicado
+            // Nome duplicado ou email duplicado (já vem traduzido do backend)
             errorMessage = data.details || "Falha ao criar registro de colaborador.";
           } else if (data.stage === 'adminCheck' && data.error?.includes('Forbidden')) {
             errorMessage = "Você não tem permissão para criar usuários.";
           }
+        }
         }
         
         toast({
