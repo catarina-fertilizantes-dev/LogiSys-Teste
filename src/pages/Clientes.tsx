@@ -104,8 +104,11 @@ const Clientes = () => {
       return;
     }
 
+    // Normalize CNPJ/CPF by removing non-numeric characters
+    const cnpjCpfNormalized = cnpj_cpf.replace(/\D/g, '');
+
     try {
-      console.log("🔍 [DEBUG] Criando cliente:", { nome, cnpj_cpf, email });
+      console.log("🔍 [DEBUG] Criando cliente:", { nome, cnpj_cpf: cnpjCpfNormalized, email });
 
       // Get Supabase URL and anon key
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -139,7 +142,7 @@ const Clientes = () => {
         supabaseAnonKey,
         {
           nome: nome.trim(),
-          cnpj_cpf: cnpj_cpf.trim(),
+          cnpj_cpf: cnpjCpfNormalized,
           email: email.trim(),
           telefone: telefone?.trim() || null,
           endereco: endereco?.trim() || null,
@@ -262,7 +265,7 @@ const Clientes = () => {
         <div className="flex flex-col sm:flex-row gap-4 flex-1">
           <div className="flex gap-2 items-center">
             <FilterIcon className="h-4 w-4 text-muted-foreground" />
-            <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as any)}>
+            <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as "all" | "ativo" | "inativo")}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filtrar por status" />
               </SelectTrigger>
