@@ -74,11 +74,20 @@ const ChangePassword = () => {
       }
 
       // Update password
-      const { error: updateError } = await supabase.auth.updateUser({
+      const { data: updateData, error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       });
 
-      if (updateError) throw updateError;
+      console.log("[ChangePassword] updateUser result:", updateData, updateError);
+
+      if (updateError) {
+        toast({
+          variant: "destructive",
+          title: "Falha ao alterar senha",
+          description: updateError.message
+        });
+          return;
+      }
 
       // Remove force_password_change flag if it exists
       const { error: metadataError } = await supabase.auth.updateUser({
