@@ -52,7 +52,7 @@ const ChangePassword = () => {
       // If current password is required, verify it first
       if (requireCurrentPassword) {
         const { data: { user } } = await supabase.auth.getUser();
-        
+
         if (!user?.email) {
           throw new Error("Usuário não encontrado");
         }
@@ -86,7 +86,7 @@ const ChangePassword = () => {
           title: "Falha ao alterar senha",
           description: updateError.message
         });
-          return;
+        return;
       }
 
       // Remove force_password_change flag if it exists
@@ -106,8 +106,9 @@ const ChangePassword = () => {
         description: "Você pode agora acessar o sistema normalmente"
       });
 
-      // Redirect to dashboard
-      navigate("/");
+      // **NOVO:** força logout e redireciona para login para evitar conflito de sessão recovery
+      await supabase.auth.signOut();
+      navigate("/login");
     } catch (error) {
       console.error("Error changing password:", error);
       toast({
