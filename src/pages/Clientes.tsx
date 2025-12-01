@@ -10,8 +10,22 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Users, Plus, Filter as FilterIcon } from "lucide-react";
 import { createCustomer } from "@/services/customers";
 
@@ -50,7 +64,6 @@ const Clientes = () => {
         .from("clientes")
         .select("*")
         .order("nome", { ascending: true });
-      
       if (error) {
         console.error("❌ [ERROR] Erro ao buscar clientes:", error);
         throw error;
@@ -106,12 +119,11 @@ const Clientes = () => {
 
     try {
       console.log("🔍 [DEBUG] Criando cliente:", { nome, cnpj_cpf, email });
+      window._debugCreateCustomer = true;
 
-      // Get Supabase URL and anon key
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      
-      // Validate environment variables
+
       if (!supabaseUrl || !supabaseAnonKey) {
         toast({
           variant: "destructive",
@@ -120,10 +132,9 @@ const Clientes = () => {
         });
         return;
       }
-      
-      // Get current session for Authorization header
+
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!session) {
         toast({
           variant: "destructive",
@@ -133,7 +144,6 @@ const Clientes = () => {
         return;
       }
 
-      // Call service layer (CNPJ/CPF normalization is handled by the service)
       const result = await createCustomer(
         supabaseUrl,
         supabaseAnonKey,
@@ -150,9 +160,14 @@ const Clientes = () => {
         session.access_token
       );
 
+      if (window._debugCreateCustomer) {
+        console.log('[DEBUG] result objeto:', result);
+        debugger; // Permite inspecionar o resultado
+      }
+
       if (!result.success) {
         console.error("❌ [ERROR] Erro ao criar cliente:", result);
-        
+
         toast({
           variant: "destructive",
           title: result.error || "Erro ao criar cliente",
@@ -163,7 +178,6 @@ const Clientes = () => {
 
       console.log("✅ [SUCCESS] Cliente criado:", result.cliente);
 
-      // Show credentials modal
       setCredenciaisModal({
         show: true,
         email: email.trim(),
@@ -177,6 +191,9 @@ const Clientes = () => {
 
     } catch (err: unknown) {
       console.error("❌ [ERROR] Erro geral:", err);
+      if (window._debugCreateCustomer) {
+        debugger; // Permite inspecionar erro inesperado
+      }
       toast({
         variant: "destructive",
         title: "Erro ao criar cliente",
@@ -188,7 +205,7 @@ const Clientes = () => {
   const handleToggleAtivo = async (id: string, ativoAtual: boolean) => {
     try {
       console.log("🔍 [DEBUG] Alterando status cliente:", { id, novoStatus: !ativoAtual });
-      
+
       const { error } = await supabase
         .from("clientes")
         .update({ ativo: !ativoAtual, updated_at: new Date().toISOString() })
@@ -205,23 +222,20 @@ const Clientes = () => {
 
   const filteredClientes = useMemo(() => {
     if (!clientesData) return [];
-    
     return clientesData.filter((cliente) => {
-      // Filter by status
+      // Status filter
       if (filterStatus === "ativo" && !cliente.ativo) return false;
       if (filterStatus === "inativo" && cliente.ativo) return false;
-      
-      // Filter by search term
+
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
-        const matches = 
+        const matches =
           cliente.nome.toLowerCase().includes(term) ||
           cliente.email.toLowerCase().includes(term) ||
           cliente.cnpj_cpf.toLowerCase().includes(term) ||
           (cliente.cidade && cliente.cidade.toLowerCase().includes(term));
         if (!matches) return false;
       }
-      
       return true;
     });
   }, [clientesData, filterStatus, searchTerm]);
@@ -302,7 +316,9 @@ const Clientes = () => {
                     <Input
                       id="nome"
                       value={novoCliente.nome}
-                      onChange={(e) => setNovoCliente({ ...novoCliente, nome: e.target.value })}
+                      onChange={(e) =>
+                        setNovoCliente({ ...novoCliente, nome: e.target.value })
+                      }
                       placeholder="Nome completo"
                     />
                   </div>
@@ -311,7 +327,9 @@ const Clientes = () => {
                     <Input
                       id="cnpj_cpf"
                       value={novoCliente.cnpj_cpf}
-                      onChange={(e) => setNovoCliente({ ...novoCliente, cnpj_cpf: e.target.value })}
+                      onChange={(e) =>
+                        setNovoCliente({ ...novoCliente, cnpj_cpf: e.target.value })
+                      }
                       placeholder="00.000.000/0000-00"
                     />
                   </div>
@@ -321,7 +339,9 @@ const Clientes = () => {
                       id="email"
                       type="email"
                       value={novoCliente.email}
-                      onChange={(e) => setNovoCliente({ ...novoCliente, email: e.target.value })}
+                      onChange={(e) =>
+                        setNovoCliente({ ...novoCliente, email: e.target.value })
+                      }
                       placeholder="email@exemplo.com"
                     />
                   </div>
@@ -330,7 +350,9 @@ const Clientes = () => {
                     <Input
                       id="telefone"
                       value={novoCliente.telefone}
-                      onChange={(e) => setNovoCliente({ ...novoCliente, telefone: e.target.value })}
+                      onChange={(e) =>
+                        setNovoCliente({ ...novoCliente, telefone: e.target.value })
+                      }
                       placeholder="(00) 00000-0000"
                     />
                   </div>
@@ -339,7 +361,9 @@ const Clientes = () => {
                     <Input
                       id="cep"
                       value={novoCliente.cep}
-                      onChange={(e) => setNovoCliente({ ...novoCliente, cep: e.target.value })}
+                      onChange={(e) =>
+                        setNovoCliente({ ...novoCliente, cep: e.target.value })
+                      }
                       placeholder="00000-000"
                     />
                   </div>
@@ -348,7 +372,9 @@ const Clientes = () => {
                     <Input
                       id="endereco"
                       value={novoCliente.endereco}
-                      onChange={(e) => setNovoCliente({ ...novoCliente, endereco: e.target.value })}
+                      onChange={(e) =>
+                        setNovoCliente({ ...novoCliente, endereco: e.target.value })
+                      }
                       placeholder="Rua, número, complemento"
                     />
                   </div>
@@ -357,7 +383,9 @@ const Clientes = () => {
                     <Input
                       id="cidade"
                       value={novoCliente.cidade}
-                      onChange={(e) => setNovoCliente({ ...novoCliente, cidade: e.target.value })}
+                      onChange={(e) =>
+                        setNovoCliente({ ...novoCliente, cidade: e.target.value })
+                      }
                       placeholder="Nome da cidade"
                     />
                   </div>
@@ -365,7 +393,9 @@ const Clientes = () => {
                     <Label htmlFor="estado">Estado (UF)</Label>
                     <Select
                       value={novoCliente.estado}
-                      onValueChange={(value) => setNovoCliente({ ...novoCliente, estado: value })}
+                      onValueChange={(value) =>
+                        setNovoCliente({ ...novoCliente, estado: value })
+                      }
                     >
                       <SelectTrigger id="estado">
                         <SelectValue placeholder="Selecione o estado" />
@@ -410,7 +440,6 @@ const Clientes = () => {
             <div className="rounded-lg border p-4 space-y-3 bg-muted/50">
               <p className="text-sm font-medium">Credenciais de acesso para:</p>
               <p className="text-base font-semibold">{credenciaisModal.nome}</p>
-              
               <div className="space-y-2">
                 <div>
                   <Label className="text-xs text-muted-foreground">Email:</Label>
@@ -422,7 +451,6 @@ const Clientes = () => {
                 </div>
               </div>
             </div>
-
             <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-3">
               <p className="text-xs text-amber-800 dark:text-amber-200">
                 ⚠️ <strong>Importante:</strong> Envie estas credenciais ao cliente. 
@@ -462,17 +490,23 @@ const Clientes = () => {
                   {cliente.ativo ? "Ativo" : "Inativo"}
                 </Badge>
               </div>
-              
               <div className="space-y-1 text-sm">
-                <p><span className="text-muted-foreground">CNPJ/CPF:</span> {cliente.cnpj_cpf}</p>
+                <p>
+                  <span className="text-muted-foreground">CNPJ/CPF:</span>{" "}
+                  {cliente.cnpj_cpf}
+                </p>
                 {cliente.telefone && (
-                  <p><span className="text-muted-foreground">Telefone:</span> {cliente.telefone}</p>
+                  <p>
+                    <span className="text-muted-foreground">Telefone:</span> {cliente.telefone}
+                  </p>
                 )}
                 {cliente.cidade && cliente.estado && (
-                  <p><span className="text-muted-foreground">Localização:</span> {cliente.cidade}/{cliente.estado}</p>
+                  <p>
+                    <span className="text-muted-foreground">Localização:</span>{" "}
+                    {cliente.cidade}/{cliente.estado}
+                  </p>
                 )}
               </div>
-
               {canCreate && (
                 <div className="flex items-center justify-between pt-3 border-t">
                   <Label htmlFor={`switch-${cliente.id}`} className="text-sm">
@@ -481,7 +515,9 @@ const Clientes = () => {
                   <Switch
                     id={`switch-${cliente.id}`}
                     checked={cliente.ativo}
-                    onCheckedChange={() => handleToggleAtivo(cliente.id, cliente.ativo)}
+                    onCheckedChange={() =>
+                      handleToggleAtivo(cliente.id, cliente.ativo)
+                    }
                   />
                 </div>
               )}
@@ -489,7 +525,6 @@ const Clientes = () => {
           </Card>
         ))}
       </div>
-
       {filteredClientes.length === 0 && (
         <div className="text-center py-12">
           <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
