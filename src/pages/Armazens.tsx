@@ -11,9 +11,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-  DialogTrigger,
   DialogFooter,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Warehouse, Plus, Filter as FilterIcon } from "lucide-react";
@@ -66,6 +65,9 @@ const Armazens = () => {
     senha: "",
     nome: "",
   });
+
+  // Modal de detalhes do armazém
+  const [detalhesArmazem, setDetalhesArmazem] = useState<Armazem | null>(null);
 
   // Filtros
   const [filterStatus, setFilterStatus] = useState<"all" | "ativo" | "inativo">("all");
@@ -515,10 +517,39 @@ const Armazens = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Modal de detalhes do armazém */}
+      <Dialog open={!!detalhesArmazem} onOpenChange={open => !open && setDetalhesArmazem(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{detalhesArmazem?.nome}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-4">
+            <p><b>Email:</b> {detalhesArmazem?.email}</p>
+            <p><b>Telefone:</b> {detalhesArmazem?.telefone || "—"}</p>
+            <p><b>Endereço:</b> {detalhesArmazem?.endereco || "—"}</p>
+            <p><b>CEP:</b> {detalhesArmazem?.cep || "—"}</p>
+            <p><b>Cidade:</b> {detalhesArmazem?.cidade || "—"}</p>
+            <p><b>Estado:</b> {detalhesArmazem?.estado || "—"}</p>
+            <p><b>Capacidade Total:</b> {detalhesArmazem?.capacidade_total ?? "—"} t</p>
+            <p><b>Disponível:</b> {detalhesArmazem?.capacidade_disponivel ?? "—"} t</p>
+            <p><b>Status:</b> {detalhesArmazem?.ativo ? "Ativo" : "Inativo"}</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setDetalhesArmazem(null)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Grid de armazéns */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
         {filteredArmazens.map((armazem) => (
-          <Card key={armazem.id}>
+          <Card
+            key={armazem.id}
+            className="cursor-pointer transition-all"
+            onClick={() => setDetalhesArmazem(armazem)}
+          >
             <CardContent className="p-4 space-y-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -533,22 +564,6 @@ const Armazens = () => {
                 <p>
                   <span className="text-muted-foreground">Email:</span> {armazem.email}
                 </p>
-                {armazem.telefone && (
-                  <p><span className="text-muted-foreground">Telefone:</span> {armazem.telefone}</p>
-                )}
-                {armazem.endereco && (
-                  <p><span className="text-muted-foreground">Endereço:</span> {armazem.endereco}</p>
-                )}
-                {armazem.capacidade_total != null && (
-                  <p>
-                    <span className="text-muted-foreground">Capacidade total:</span> {armazem.capacidade_total} t
-                  </p>
-                )}
-                {armazem.capacidade_disponivel != null && (
-                  <p>
-                    <span className="text-muted-foreground">Disponível:</span> {armazem.capacidade_disponivel} t
-                  </p>
-                )}
               </div>
               {canCreate && (
                 <div className="flex items-center justify-between pt-3 border-t">
@@ -559,6 +574,7 @@ const Armazens = () => {
                     id={`switch-${armazem.id}`}
                     checked={armazem.ativo}
                     onCheckedChange={() => handleToggleAtivo(armazem.id, armazem.ativo)}
+                    onClick={e => e.stopPropagation()}
                   />
                 </div>
               )}
