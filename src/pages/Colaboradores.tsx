@@ -109,178 +109,180 @@ const Colaboradores = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCreateUser = async () => {
-    if (!newUserEmail || ! newUserNome || !newUserPassword || !newUserRole) {
+const handleCreateUser = async () => {
+  if (!newUserEmail || !newUserNome || !newUserPassword || !newUserRole) {
+    toast({
+      variant: "destructive",
+      title: "Erro",
+      description: "Preencha todos os campos"
+    });
+    return;
+  }
+
+  // Validar senha usando o schema
+  const passwordValidation = passwordSchema.safeParse(newUserPassword);
+  if (!passwordValidation.success) {
+    const errorMessage = passwordValidation.error.issues[0]?.message || "Senha inválida";
+    console.log('🔍 [DEBUG] Validação de senha falhou:', passwordValidation.error);
+    toast({
+      variant: "destructive",
+      title: "Senha inválida",
+      description: errorMessage
+    });
+    return;
+  }
+
+  try {
+    console.log('🔍 [DEBUG] Tentando criar colaborador:', { email: newUserEmail, nome: newUserNome, role: newUserRole });
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
       toast({
         variant: "destructive",
-        title: "Erro",
-        description: "Preencha todos os campos"
+        title: "Erro de configuração",
+        description: "Variáveis de ambiente do Supabase não configuradas."
       });
       return;
     }
 
-    // Validar senha usando o schema
-    const passwordValidation = passwordSchema.safeParse(newUserPassword);
-    if (! passwordValidation.success) {
-      const errorMessage = passwordValidation.error.issues[0]?.message || "Senha inválida";
-    
-      console.log('🔍 [DEBUG] Validação de senha falhou:', passwordValidation.error);
-    
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
       toast({
         variant: "destructive",
-        title: "Senha inválida",
-        description: errorMessage
+        title: "Erro de autenticação",
+        description: "Sessão expirada. Faça login novamente."
       });
       return;
     }
 
+    const response = await fetch(`${supabaseUrl}/functions/v1/admin-users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': supabaseAnonKey
+      },
+      body: JSON.stringify({
+        email: newUserEmail,
+        password: newUserPassword,
+        nome: newUserNome,
+        role: newUserRole,
+      })
+    });
+
+    let data = null;
     try {
-      console.log('🔍 [DEBUG] Tentando criar colaborador:', { email: newUserEmail, nome: newUserNome, role: newUserRole });
-      
-      // Get Supabase URL and anon key
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      
-      // Validate environment variables
-      if (!supabaseUrl || !supabaseAnonKey) {
-        toast({
-          variant: "destructive",
-          title: "Erro de configuração",
-          description: "Variáveis de ambiente do Supabase não configuradas."
-        });
-        return;
-      }
-      
-      // Get current session for Authorization header
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        toast({
-          variant: "destructive",
-          title: "Erro de autenticação",
-          description: "Sessão expirada. Faça login novamente."
-        });
-        return;
-      }
-      
-      // Make manual fetch request to have full control over response
-      const response = await fetch(`${supabaseUrl}/functions/v1/admin-users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': supabaseAnonKey
-        },
-        body: JSON.stringify({
-          email: newUserEmail,
-          password: newUserPassword,
-          nome: newUserNome,
-          role: newUserRole,
-        })
+      data = await response.json();
+    } catch (parseError) {
+      console.error('❌ [ERROR] Failed to parse response JSON:', parseError);
+      toast({
+        variant: "destructive",
+        title: "Erro ao criar colaborador",
+        description: "Resposta inválida do servidor. Verifique os logs para mais detalhes."
       });
-      
-      // Parse response body
-      let data = null;
-      try {
-        data = await response.json();
-      } catch (parseError) {
-        console.error('❌ [ERROR] Failed to parse response JSON:', parseError);
-        toast({
-          variant: "destructive",
-          title: "Erro ao criar colaborador",
-          description: "Resposta inválida do servidor. Verifique os logs para mais detalhes."
-        });
-        return;
-      }
-      
-      console.log('🔍 [DEBUG] Resposta da Edge Function:', { status: response.status, data });
-      
-      // Handle non-2xx responses
-      if (! response.ok) {
-        console.error('❌ [ERROR] Edge Function returned non-2xx status:', response. status);
-  
-        let errorMessage = "Erro ao criar colaborador";
-  
-        if (data) {
-          // Extract error message from backend response
+      return;
+    }
+
+    console.log('🔍 [DEBUG] Resposta da Edge Function:', { status: response.status, data });
+
+    if (!response.ok) {
+      console.error('❌ [ERROR] Edge Function returned non-2xx status:', response.status);
+
+      let errorMessage = "Erro ao criar colaborador";
+
+      // ------ TRATAMENTO ROBUSTO PARA DETALHES ZOD/OBJETO ------
+      if (data) {
+        if (
+          typeof data.details === "object" &&
+          data.details !== null &&
+          "fieldErrors" in data.details
+        ) {
+          // Detalhes de erro do Zod: mensagens de campo amigáveis
+          errorMessage = Object.values(data.details.fieldErrors)
+            .flat()
+            .join(" | ");
+        } else {
+          // Se details é string ou similar
           let rawDetails = data.details || data.error || "";
-    
-          // Traduzir mensagens comuns do Supabase em inglês
-          if (rawDetails. includes('already been registered') || rawDetails.includes('already exists')) {
+
+          // Traduzir duplicidade
+          if (typeof rawDetails === "string" &&
+            (rawDetails.includes('already been registered') || rawDetails.includes('already exists'))) {
             errorMessage = "Este email já está cadastrado no sistema.";
-          } else if (data. details) {
-            errorMessage = data.details;
+          } else if (data.details) {
+            errorMessage = String(data.details);
           } else if (data.error) {
-            errorMessage = data.error;
+            errorMessage = String(data.error);
           }
-    
-          // Specific messages by stage (sobrescreve tradução genérica se necessário)
-          if (data.stage === 'validation' && data.error?.includes('Weak password')) {
-            errorMessage = "Senha muito fraca.   Use pelo menos 6 caracteres e evite senhas comuns.  ";
+
+          // Mensagens específicas de stage
+          if (data.stage === 'validation' && String(data.error).includes('Weak password')) {
+            errorMessage = "Senha muito fraca. Use pelo menos 6 caracteres e evite senhas comuns.";
           } else if (data.stage === 'createUser') {
-            // Mensagens específicas de criação de usuário
-            if (rawDetails.includes('already been registered') || rawDetails. includes('already exists')) {
+            if (String(rawDetails).includes('already been registered') ||
+              String(rawDetails).includes('already exists')) {
               errorMessage = "Este email já está cadastrado no sistema.";
             }
           } else if (data.stage === 'createColaborador') {
-            // Nome duplicado ou email duplicado (já vem traduzido do backend)
             errorMessage = data.details || "Falha ao criar registro de colaborador.";
-          } else if (data.stage === 'adminCheck' && data.error?. includes('Forbidden')) {
-            errorMessage = "Você não tem permissão para criar usuários. ";
+          } else if (data.stage === 'adminCheck' && String(data.error).includes('Forbidden')) {
+            errorMessage = "Você não tem permissão para criar usuários.";
           }
         }
-  
-        toast({
-          variant: "destructive",
-          title: "Erro ao criar colaborador",
-          description: errorMessage
-        });
-        return;
       }
-      
-      // Success case - verify we have valid data
-      if (!data) {
-        toast({
-          variant: "destructive",
-          title: "Erro ao criar colaborador",
-          description: "Resposta vazia do servidor."
-        });
-        return;
-      }
-      
-      if (data.success) {
-        console.log('✅ [SUCCESS] Colaborador criado com sucesso:', data);
-        toast({
-          title: "Colaborador criado com sucesso!",
-          description: `${newUserNome} foi adicionado ao sistema com a role ${newUserRole}`
-        });
-        
-        setNewUserEmail("");
-        setNewUserNome("");
-        setNewUserPassword("");
-        setNewUserRole("logistica");
-        setDialogOpen(false);
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-        fetchUsers();
-      } else {
-        // Unexpected response structure
-        toast({
-          variant: "destructive",
-          title: "Erro ao criar colaborador",
-          description: data.error || data.details || "Resposta inesperada do servidor"
-        });
-      }
-    } catch (err) {
-      console.error('❌ [ERROR] Exceção ao criar colaborador:', err);
-      const errorMessage = err instanceof Error ? err.message : JSON.stringify(err);
+
       toast({
         variant: "destructive",
         title: "Erro ao criar colaborador",
         description: errorMessage
       });
+      return;
     }
-  };
+
+    // Success case - verify we have valid data
+    if (!data) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao criar colaborador",
+        description: "Resposta vazia do servidor."
+      });
+      return;
+    }
+
+    if (data.success) {
+      console.log('✅ [SUCCESS] Colaborador criado com sucesso:', data);
+      toast({
+        title: "Colaborador criado com sucesso!",
+        description: `${newUserNome} foi adicionado ao sistema com a role ${newUserRole}`
+      });
+      setNewUserEmail("");
+      setNewUserNome("");
+      setNewUserPassword("");
+      setNewUserRole("logistica");
+      setDialogOpen(false);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      fetchUsers();
+    } else {
+      // Unexpected response structure
+      toast({
+        variant: "destructive",
+        title: "Erro ao criar colaborador",
+        description: data.error || data.details || "Resposta inesperada do servidor"
+      });
+    }
+  } catch (err) {
+    console.error('❌ [ERROR] Exceção ao criar colaborador:', err);
+    const errorMessage = err instanceof Error ? err.message : JSON.stringify(err);
+    toast({
+      variant: "destructive",
+      title: "Erro ao criar colaborador",
+      description: errorMessage
+    });
+  }
+};
 
   const handleUpdateUserRole = async (userId: string, newRole: UserRole) => {
     const { error } = await supabase.rpc('update_user_role', { _user_id: userId, _role: newRole }) as { error: Error | null };
