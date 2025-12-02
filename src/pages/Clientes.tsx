@@ -110,103 +110,103 @@ const Clientes = () => {
   };
 
   const handleCreateCliente = async () => {
-    const { nome, cnpj_cpf, email, telefone, endereco, cidade, estado, cep } = novoCliente;
+  const { nome, cnpj_cpf, email, telefone, endereco, cidade, estado, cep } = novoCliente;
 
-    if (!nome. trim() || !cnpj_cpf.trim() || !email.trim()) {
-      toast({ variant: "destructive", title: "Preencha os campos obrigatórios" });
+  if (!nome.trim() || !cnpj_cpf.trim() || !email.trim()) {
+    toast({ variant: "destructive", title: "Preencha os campos obrigatórios" });
+    return;
+  }
+
+  try {
+    console.log("🔍 [DEBUG] Criando cliente:", { nome, cnpj_cpf, email });
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      toast({
+        variant: "destructive",
+        title: "Erro de configuração",
+        description: "Variáveis de ambiente do Supabase não configuradas."
+      });
       return;
     }
 
-    try {
-      console.log("🔍 [DEBUG] Criando cliente:", { nome, cnpj_cpf, email });
+    const { data: { session } } = await supabase.auth.getSession();
 
-      const supabaseUrl = import.meta. env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-      if (!supabaseUrl || !supabaseAnonKey) {
-        toast({
-          variant: "destructive",
-          title: "Erro de configuração",
-          description: "Variáveis de ambiente do Supabase não configuradas."
-        });
-        return;
-      }
-
-      const { data: { session } } = await supabase. auth.getSession();
-
-      if (!session) {
-        toast({
-          variant: "destructive",
-          title: "Não autenticado",
-          description: "Sessão expirada.  Faça login novamente."
-        });
-        return;
-      }
-
-      // Chama o serviço createCustomer (nunca lança exceção, sempre retorna objeto)
-      const result = await createCustomer(
-        supabaseUrl,
-        supabaseAnonKey,
-        {
-          nome: nome.trim(),
-          cnpj_cpf: cnpj_cpf.trim(),
-          email: email.trim(),
-          telefone: telefone?.trim() || null,
-          endereco: endereco?.trim() || null,
-          cidade: cidade?.trim() || null,
-          estado: estado || null,
-          cep: cep?.trim() || null,
-        },
-        session.access_token
-      );
-
-      console.log("🔍 [DEBUG] Resultado do createCustomer:", result);
-
-      // Tratamento de erro - O serviço SEMPRE retorna um objeto, nunca lança exceção
-      if (!result.success) {
-        console.error("❌ [ERROR] Erro ao criar cliente:", result);
-
-        // Prioriza details (mensagem amigável do backend) sobre error
-        const errorMessage = result.details || result.error || "Ocorreu um erro inesperado. ";
-        
-        console.log("🔍 [DEBUG] Detalhes do erro:", {
-          error: result.error,
-          details: result.details,
-          status: result.status
-        });
-
-        toast({
-          variant: "destructive",
-          title: result.error || "Erro ao criar cliente",
-          description: errorMessage
-        });
-        return;
-      }
-
-      // Sucesso
-      console.log("✅ [SUCCESS] Cliente criado com sucesso:", result. cliente);
-
-      setCredenciaisModal({
-        show: true,
-        email: email.trim(),
-        senha: result.senha || "",
-        nome: nome.trim()
-      });
-
-      resetForm();
-      setDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["clientes"] });
-
-    } catch (err: unknown) {
-      // Este catch só deve pegar erros realmente inesperados (falha de rede, etc)
-      console.error("❌ [ERROR] Exceção inesperada ao criar cliente:", err);
+    if (!session) {
       toast({
         variant: "destructive",
-        title: "Erro de conexão",
-        description: err instanceof Error ? err.message : "Erro desconhecido ao conectar com o servidor"
+        title: "Não autenticado",
+        description: "Sessão expirada.  Faça login novamente."
       });
+      return;
     }
-  };
+
+    // Chama o serviço createCustomer (nunca lança exceção, sempre retorna objeto)
+    const result = await createCustomer(
+      supabaseUrl,
+      supabaseAnonKey,
+      {
+        nome: nome.trim(),
+        cnpj_cpf: cnpj_cpf.trim(),
+        email: email.trim(),
+        telefone: telefone?.trim() || null,
+        endereco: endereco?.trim() || null,
+        cidade: cidade?.trim() || null,
+        estado: estado || null,
+        cep: cep?.trim() || null,
+      },
+      session.access_token
+    );
+
+    console.log("🔍 [DEBUG] Resultado do createCustomer:", result);
+
+    // Tratamento de erro - O serviço SEMPRE retorna um objeto, nunca lança exceção
+    if (!result.success) {
+      console.error("❌ [ERROR] Erro ao criar cliente:", result);
+
+      // Prioriza details (mensagem amigável do backend) sobre error
+      const errorMessage = result.details || result.error || "Ocorreu um erro inesperado. ";
+
+      console.log("🔍 [DEBUG] Detalhes do erro:", {
+        error: result.error,
+        details: result.details,
+        status: result.status
+      });
+
+      toast({
+        variant: "destructive",
+        title: "Erro ao criar cliente", // Título sempre será este fixo
+        description: errorMessage      // Mensagem detalhada do backend
+      });
+      return;
+    }
+
+    // Sucesso
+    console.log("✅ [SUCCESS] Cliente criado com sucesso:", result.cliente);
+
+    setCredenciaisModal({
+      show: true,
+      email: email.trim(),
+      senha: result.senha || "",
+      nome: nome.trim()
+    });
+
+    resetForm();
+    setDialogOpen(false);
+    queryClient.invalidateQueries({ queryKey: ["clientes"] });
+
+  } catch (err: unknown) {
+    // Este catch só deve pegar erros realmente inesperados (falha de rede, etc)
+    console.error("❌ [ERROR] Exceção inesperada ao criar cliente:", err);
+    toast({
+      variant: "destructive",
+      title: "Erro de conexão",
+      description: err instanceof Error ? err.message : "Erro desconhecido ao conectar com o servidor"
+    });
+  }
+};
 
   const handleToggleAtivo = async (id: string, ativoAtual: boolean) => {
     try {
