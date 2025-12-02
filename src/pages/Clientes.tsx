@@ -110,147 +110,141 @@ const Clientes = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Criação de cliente (mesmo padrão de Colaboradores)
-const handleCreateCliente = async () => {
-  const { nome, cnpj_cpf, email, telefone, endereco, cidade, estado, cep } = novoCliente;
-  if (!nome.trim() || !cnpj_cpf.trim() || !email.trim()) {
-    toast({
-      variant: "destructive",
-      title: "Preencha os campos obrigatórios",
-    });
-    return;
-  }
-
-  try {
-    console.log("🔍 [DEBUG] Criando cliente:", { nome, cnpj_cpf, email });
-
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl || !supabaseAnonKey) {
+  const handleCreateCliente = async () => {
+    const { nome, cnpj_cpf, email, telefone, endereco, cidade, estado, cep } = novoCliente;
+    if (!nome.trim() || !cnpj_cpf.trim() || !email.trim()) {
       toast({
         variant: "destructive",
-        title: "Erro de configuração",
-        description: "Variáveis de ambiente do Supabase não configuradas.",
+        title: "Preencha os campos obrigatórios",
       });
       return;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      toast({
-        variant: "destructive",
-        title: "Não autenticado",
-        description: "Sessão expirada. Faça login novamente.",
-      });
-      return;
-    }
-
-    const response = await fetch(`${supabaseUrl}/functions/v1/create-customer-user`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-        apikey: supabaseAnonKey,
-      },
-      body: JSON.stringify({
-        nome: nome.trim(),
-        cnpj_cpf: cnpj_cpf.trim(),
-        email: email.trim(),
-        telefone: telefone?.trim() || null,
-        endereco: endereco?.trim() || null,
-        cidade: cidade?.trim() || null,
-        estado: estado || null,
-        cep: cep?.trim() || null,
-      }),
-    });
-
-    // LOG de resposta bruta
-    console.log("[DEBUG][raw response]", response.status, response.statusText, Object.fromEntries(response.headers.entries()));
-
-    const textBody = await response.text();
-    console.log("[DEBUG][raw body]", textBody);
-
-    let data: any = null;
     try {
-      data = JSON.parse(textBody);
-    } catch {
-      data = null;
-    }
+      console.log("🔍 [DEBUG] Criando cliente:", { nome, cnpj_cpf, email });
 
-    if (!response.ok) {
-      let errorMessage = "Erro ao criar cliente";
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      if (data) {
-        if (
-          typeof data.details === "object" &&
-          data.details !== null &&
-          "fieldErrors" in data.details
-        ) {
-          // Erro de validação schema, traduz mensagens para pt-BR
-          errorMessage = Object.values(data.details.fieldErrors)
-            .flat()
-            .map(msg =>
-              msg === "Invalid email" ? "Email inválido"
-              : msg === "Required" ? "Campo obrigatório"
-              : msg.includes("at least") ? msg.replace("String must contain at least", "Mínimo de").replace("character(s)", "caracteres")
-              : msg
-            )
-            .join(" | ");
-        } else if (typeof data.details === "string") {
-          errorMessage = data.details;
-        } else if (data.error) {
-          errorMessage = data.error;
-        } else {
-          errorMessage = JSON.stringify(data.details);
-        }
+      if (!supabaseUrl || !supabaseAnonKey) {
+        toast({
+          variant: "destructive",
+          title: "Erro de configuração",
+          description: "Variáveis de ambiente do Supabase não configuradas.",
+        });
+        return;
       }
 
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          variant: "destructive",
+          title: "Não autenticado",
+          description: "Sessão expirada. Faça login novamente.",
+        });
+        return;
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-customer-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: supabaseAnonKey,
+        },
+        body: JSON.stringify({
+          nome: nome.trim(),
+          cnpj_cpf: cnpj_cpf.trim(),
+          email: email.trim(),
+          telefone: telefone?.trim() || null,
+          endereco: endereco?.trim() || null,
+          cidade: cidade?.trim() || null,
+          estado: estado || null,
+          cep: cep?.trim() || null,
+        }),
+      });
+
+      // LOG de resposta bruta
+      console.log("[DEBUG][raw response]", response.status, response.statusText, Object.fromEntries(response.headers.entries()));
+
+      const textBody = await response.text();
+      console.log("[DEBUG][raw body]", textBody);
+
+      let data: any = null;
+      try {
+        data = JSON.parse(textBody);
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        let errorMessage = "Erro ao criar cliente";
+        if (data) {
+          if (
+            typeof data.details === "object" &&
+            data.details !== null &&
+            "fieldErrors" in data.details
+          ) {
+            errorMessage = Object.values(data.details.fieldErrors)
+              .flat()
+              .map(msg =>
+                msg === "Invalid email" ? "Email inválido"
+                : msg === "Required" ? "Campo obrigatório"
+                : msg.includes("at least") ? msg.replace("String must contain at least", "Mínimo de").replace("character(s)", "caracteres")
+                : msg
+              )
+              .join(" | ");
+          } else if (typeof data.details === "string") {
+            errorMessage = data.details;
+          } else if (data.error) {
+            errorMessage = data.error;
+          } else {
+            errorMessage = JSON.stringify(data.details);
+          }
+        }
+
+        toast({
+          variant: "destructive",
+          title: "Erro ao criar cliente",
+          description: errorMessage,
+        });
+        return;
+      }
+
+      if (data && data.success) {
+        toast({
+          title: "Cliente criado com sucesso!",
+          description: `${nome} foi adicionado ao sistema.`,
+        });
+
+        // Apenas abre o modal, não feche automaticamente!
+        setCredenciaisModal({
+          show: true,
+          email: email.trim(),
+          senha: data.senha || "",
+          nome: nome.trim(),
+        });
+
+        resetForm();
+        setDialogOpen(false);
+        fetchClientes();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Erro ao criar cliente",
+          description: data?.error || data?.details || "Resposta inesperada do servidor",
+        });
+      }
+    } catch (err) {
+      console.error("[DEBUG][fetch catch]", err);
       toast({
         variant: "destructive",
-        title: "Erro ao criar cliente",
-        description: errorMessage,
-      });
-      return;
-    }
-
-    // Sucesso
-    if (data && data.success) {
-      toast({
-        title: "Cliente criado com sucesso!",
-        description: `${nome} foi adicionado ao sistema.`,
-      });
-
-      setCredenciaisModal({
-        show: true,
-        email: email.trim(),
-        senha: data.senha || "",
-        nome: nome.trim(),
-      });
-
-      resetForm();
-      setDialogOpen(false);
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      fetchClientes();
-    } else {
-      toast({
-        variant: "destructive",
-        title: "Erro ao criar cliente",
-        description: data?.error || data?.details || "Resposta inesperada do servidor",
+        title: "Erro de conexão/fetch",
+        description: err instanceof Error ? err.message : JSON.stringify(err),
       });
     }
-  } catch (err) {
-    console.error("[DEBUG][fetch catch]", err);
-    toast({
-      variant: "destructive",
-      title: "Erro de conexão/fetch",
-      description: err instanceof Error ? err.message : JSON.stringify(err),
-    });
-  }
-};
-  
-  // Ativa/desativa cliente
+  };
+
   const handleToggleAtivo = async (id: string, ativoAtual: boolean) => {
     try {
       const { error } = await supabase
@@ -458,7 +452,16 @@ const handleCreateCliente = async () => {
       </div>
 
       {/* Modal com credenciais temporárias do Cliente */}
-      <Dialog open={credenciaisModal.show} onOpenChange={(open) => setCredenciaisModal({ ...credenciaisModal, show: open })}>
+      <Dialog
+        open={credenciaisModal.show}
+        onOpenChange={(open) =>
+          setCredenciaisModal(
+            open
+              ? credenciaisModal
+              : { show: false, email: "", senha: "", nome: "" }
+          )
+        }
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>✅ Cliente cadastrado com sucesso!</DialogTitle>
