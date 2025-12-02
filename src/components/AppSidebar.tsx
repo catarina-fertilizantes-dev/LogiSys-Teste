@@ -10,6 +10,7 @@ import {
   LogOut,
   Settings,
   BadgeCheck,
+  Tag,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -59,7 +60,14 @@ const upperMenuItems = [
   },
 ];
 
+// Produtos adicionado acima de Clientes
 const lowerMenuItems = [
+  {
+    title: "Produtos",
+    url: "/produtos",
+    icon: Tag,
+    resource: "produtos" as const,
+  },
   {
     title: "Clientes",
     url: "/clientes",
@@ -97,32 +105,26 @@ export function AppSidebar() {
       if ('requiresRole' in item && item.requiresRole) {
         const hasRequiredRole = userRole ? item.requiresRole.includes(userRole) : false;
         if (!hasRequiredRole) {
-          console.log(`❌ [DEBUG] Menu item "${item.title}" - requires role ${item.requiresRole.join(' or ')}, user has: ${userRole}`);
+          // ocultar por perfil
           return false;
         }
       }
-      
       if (!item.resource) {
-        console.log(`✅ [DEBUG] Menu item "${item.title}" - no resource required, showing`);
         return true;
       }
       const hasAccess = canAccess(item.resource, 'read');
-      console.log(`${hasAccess ? '✅' : '❌'} [DEBUG] Menu item "${item.title}" - resource: ${item.resource}, access: ${hasAccess}`);
       return hasAccess;
     });
   };
 
   // Wait for permissions to load before filtering menu
-  const visibleUpperMenuItems = permissionsLoading 
-    ? [upperMenuItems[0]] // Show only Dashboard while loading
+  const visibleUpperMenuItems = permissionsLoading
+    ? [upperMenuItems[0]]
     : filterMenuItems(upperMenuItems);
 
-  const visibleLowerMenuItems = permissionsLoading 
+  const visibleLowerMenuItems = permissionsLoading
     ? []
     : filterMenuItems(lowerMenuItems);
-
-  console.log('✅ [DEBUG] Final visible upper menu items:', visibleUpperMenuItems.map(i => i.title));
-  console.log('✅ [DEBUG] Final visible lower menu items:', visibleLowerMenuItems.map(i => i.title));
 
   return (
     <Sidebar collapsible="icon">
