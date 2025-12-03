@@ -67,6 +67,9 @@ const Estoque = () => {
           armazem:armazens(id, nome, cidade)
         `)
         .order("updated_at", { ascending: false });
+      
+      console.log("[DEBUG] Dados do estoque lidos:", data);
+      
       if (error) {
         toast({
           variant: "destructive",
