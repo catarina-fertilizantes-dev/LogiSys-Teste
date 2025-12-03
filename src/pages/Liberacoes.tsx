@@ -315,7 +315,9 @@ const Liberacoes = () => {
                     </SelectTrigger>
                     <SelectContent>
                       {armazens?.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.cidade} - {a.estado}</SelectItem>
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.cidade}{a.estado ? "/" + a.estado : ""} - {a.nome}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
