@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 type StatusLib = "pendente" | "parcial" | "concluido";
 
 interface LiberacaoItem {
-  id: string; // UUID
+  id: string;
   produto: string;
   cliente: string;
   quantidade: number;
@@ -40,6 +40,7 @@ const Liberacoes = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Query principal de liberações
   const { data: liberacoesData, isLoading, error } = useQuery({
     queryKey: ["liberacoes"],
     queryFn: async () => {
@@ -55,12 +56,12 @@ const Liberacoes = () => {
           data_liberacao,
           created_at,
           cliente_id,
+          cliente_nome,
           clientes(nome, cnpj_cpf),
           produto:produtos(id, nome),
           armazem:armazens(id, nome, cidade, estado)
         `)
         .order("created_at", { ascending: false });
-      
       if (error) {
         console.error("❌ [ERROR] Erro ao buscar liberações:", error);
         throw error;
@@ -71,24 +72,25 @@ const Liberacoes = () => {
     refetchInterval: 30000,
   });
 
+  // Prepara array para grid/cards
   const liberacoes = useMemo(() => {
     if (!liberacoesData) return [];
     return liberacoesData.map((item: any) => ({
       id: item.id,
       produto: item.produto?.nome || "N/A",
-      cliente: item.clientes?.nome || "N/A",
+      cliente: item.cliente_nome || item.clientes?.nome || "N/A",
       quantidade: item.quantidade_liberada,
       quantidadeRetirada: item.quantidade_retirada,
       pedido: item.pedido_interno,
       data: new Date(item.data_liberacao || item.created_at).toLocaleDateString("pt-BR"),
       status: item.status as StatusLib,
-      armazem: item.armazem?.estado || item.armazem?.cidade,
+      armazem: item.armazem ? `${item.armazem.cidade}/${item.armazem.estado} - ${item.armazem.nome}` : "N/A",
       produto_id: item.produto?.id,
       armazem_id: item.armazem?.id,
     }));
   }, [liberacoesData]);
 
-  // Estados do Dialog "Nova Liberação"
+  // Estados modal "Nova Liberação"
   const [dialogOpen, setDialogOpen] = useState(false);
   const [novaLiberacao, setNovaLiberacao] = useState({
     produto: "",
@@ -110,7 +112,6 @@ const Liberacoes = () => {
       return data || [];
     },
   });
-
   const { data: armazens } = useQuery({
     queryKey: ["armazens-list"],
     queryFn: async () => {
@@ -122,7 +123,6 @@ const Liberacoes = () => {
       return data || [];
     },
   });
-
   const { data: clientesData } = useQuery({
     queryKey: ["clientes-ativos"],
     queryFn: async () => {
@@ -136,7 +136,7 @@ const Liberacoes = () => {
     },
   });
 
-  /* Filtros compactos + colapsáveis */
+  // Filtros compactos + colapsáveis
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<StatusLib[]>([]);
@@ -145,12 +145,16 @@ const Liberacoes = () => {
   const [selectedArmazens, setSelectedArmazens] = useState<string[]>([]);
 
   const allStatuses: StatusLib[] = ["pendente", "parcial", "concluido"];
-  const allArmazens = useMemo(() => Array.from(new Set(liberacoes.map((l) => l.armazem).filter(Boolean))) as string[], [liberacoes]);
+  const allArmazens = useMemo(() =>
+    Array.from(new Set(liberacoes.map((l) => l.armazem).filter(Boolean))) as string[],
+    [liberacoes]
+  );
 
   const toggleStatus = (st: StatusLib) => setSelectedStatuses((prev) => (prev.includes(st) ? prev.filter((s) => s !== st) : [...prev, st]));
   const toggleArmazem = (a: string) => setSelectedArmazens((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
   const clearFilters = () => { setSearch(""); setSelectedStatuses([]); setDateFrom(""); setDateTo(""); setSelectedArmazens([]); };
 
+  // Filtro dos cards
   const filteredLiberacoes = useMemo(() => {
     return liberacoes.filter((l) => {
       const term = search.trim().toLowerCase();
@@ -181,6 +185,7 @@ const Liberacoes = () => {
     setNovaLiberacao({ produto: "", armazem: "", cliente_id: "", pedido: "", quantidade: "" });
   };
 
+  // CADASTRAR nova liberação
   const handleCreateLiberacao = async () => {
     const { produto, armazem, cliente_id, pedido, quantidade } = novaLiberacao;
 
@@ -188,10 +193,16 @@ const Liberacoes = () => {
       toast({ variant: "destructive", title: "Preencha todos os campos obrigatórios" });
       return;
     }
-
     const qtdNum = Number(quantidade);
     if (Number.isNaN(qtdNum) || qtdNum <= 0) {
       toast({ variant: "destructive", title: "Quantidade inválida" });
+      return;
+    }
+
+    // Busca nome do cliente para campo NOT NULL
+    const clienteSelecionado = clientesData?.find(c => c.id === cliente_id);
+    if (!clienteSelecionado) {
+      toast({ variant: "destructive", title: "Cliente inválido" });
       return;
     }
 
@@ -199,13 +210,14 @@ const Liberacoes = () => {
       console.log("🔍 [DEBUG] Criando liberação:", { produto, armazem, cliente_id, pedido, quantidade: qtdNum });
 
       const { data: userData } = await supabase.auth.getUser();
-      
+
       const { data, error: errLib } = await supabase
         .from("liberacoes")
         .insert({
           produto_id: produto,
           armazem_id: armazem,
           cliente_id: cliente_id,
+          cliente_nome: clienteSelecionado.nome,
           pedido_interno: pedido.trim(),
           quantidade_liberada: qtdNum,
           quantidade_retirada: 0,
@@ -220,12 +232,11 @@ const Liberacoes = () => {
         console.error("❌ [ERROR] Erro ao criar liberação:", errLib);
         throw new Error(`Erro ao criar liberação: ${errLib.message} (${errLib.code || 'N/A'})`);
       }
-
       console.log("✅ [SUCCESS] Liberação criada:", data);
 
-      toast({ 
-        title: "Liberação criada com sucesso!", 
-        description: `Pedido ${pedido} para ${data.clientes?.nome} - ${qtdNum}t de ${data.produto?.nome}` 
+      toast({
+        title: "Liberação criada com sucesso!",
+        description: `Pedido ${pedido} para ${clienteSelecionado.nome} - ${qtdNum}t`
       });
 
       resetFormNovaLiberacao();
@@ -234,7 +245,7 @@ const Liberacoes = () => {
 
     } catch (err: unknown) {
       console.error("❌ [ERROR] Erro geral ao criar liberação:", err);
-      
+
       toast({
         variant: "destructive",
         title: "Erro ao criar liberação",
@@ -284,10 +295,9 @@ const Liberacoes = () => {
                 <DialogTitle>Nova Liberação</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
-                {/* Produto combobox (igual Estoque, nome) */}
                 <div className="space-y-2">
                   <Label htmlFor="produto">Produto *</Label>
-                  <Select value={novaLiberacao.produto} onValueChange={(v) => setNovaLiberacao(s => ({ ...s, produto: v }))}>
+                  <Select value={novaLiberacao.produto} onValueChange={(v) => setNovaLiberacao((s) => ({ ...s, produto: v }))}>
                     <SelectTrigger id="produto">
                       <SelectValue placeholder="Selecione o produto" />
                     </SelectTrigger>
@@ -298,11 +308,9 @@ const Liberacoes = () => {
                     </SelectContent>
                   </Select>
                 </div>
-            
-                {/* Armazém combobox (igual Estoque, cidade - estado) */}
                 <div className="space-y-2">
                   <Label htmlFor="armazem">Armazém *</Label>
-                  <Select value={novaLiberacao.armazem} onValueChange={(v) => setNovaLiberacao(s => ({ ...s, armazem: v }))}>
+                  <Select value={novaLiberacao.armazem} onValueChange={(v) => setNovaLiberacao((s) => ({ ...s, armazem: v }))}>
                     <SelectTrigger id="armazem">
                       <SelectValue placeholder="Selecione o armazém" />
                     </SelectTrigger>
@@ -315,11 +323,9 @@ const Liberacoes = () => {
                     </SelectContent>
                   </Select>
                 </div>
-            
-                {/* Cliente combobox */}
                 <div className="space-y-2">
                   <Label htmlFor="cliente">Cliente *</Label>
-                  <Select value={novaLiberacao.cliente_id} onValueChange={(v) => setNovaLiberacao(s => ({ ...s, cliente_id: v }))}>
+                  <Select value={novaLiberacao.cliente_id} onValueChange={(v) => setNovaLiberacao((s) => ({ ...s, cliente_id: v }))}>
                     <SelectTrigger id="cliente">
                       <SelectValue placeholder="Selecione o cliente" />
                     </SelectTrigger>
@@ -332,26 +338,24 @@ const Liberacoes = () => {
                     </SelectContent>
                   </Select>
                 </div>
-            
                 <div className="space-y-2">
                   <Label htmlFor="pedido">Número do Pedido *</Label>
-                  <Input 
-                    id="pedido" 
-                    value={novaLiberacao.pedido} 
-                    onChange={e => setNovaLiberacao(s => ({ ...s, pedido: e.target.value }))} 
+                  <Input
+                    id="pedido"
+                    value={novaLiberacao.pedido}
+                    onChange={(e) => setNovaLiberacao((s) => ({ ...s, pedido: e.target.value }))}
                     placeholder="Ex: PED-2024-001"
                   />
                 </div>
-            
                 <div className="space-y-2">
                   <Label htmlFor="quantidade">Quantidade (t) *</Label>
-                  <Input 
-                    id="quantidade" 
-                    type="number" 
-                    step="0.01" 
+                  <Input
+                    id="quantidade"
+                    type="number"
+                    step="0.01"
                     min="0"
-                    value={novaLiberacao.quantidade} 
-                    onChange={e => setNovaLiberacao(s => ({ ...s, quantidade: e.target.value }))} 
+                    value={novaLiberacao.quantidade}
+                    onChange={(e) => setNovaLiberacao((s) => ({ ...s, quantidade: e.target.value }))}
                     placeholder="0.00"
                   />
                 </div>
@@ -378,6 +382,7 @@ const Liberacoes = () => {
         </div>
       </div>
 
+      {/* Filtros avançados */}
       {filtersOpen && (
         <div className="container mx-auto px-6 pt-2">
           <div className="rounded-md border p-3 space-y-3">
@@ -426,6 +431,7 @@ const Liberacoes = () => {
         </div>
       )}
 
+      {/* Grid de cards */}
       <div className="container mx-auto px-6 py-6">
         <div className="grid gap-4">
           {filteredLiberacoes.map((lib) => (
@@ -447,8 +453,8 @@ const Liberacoes = () => {
                   <Badge
                     variant={
                       lib.status === "concluido" ? "default" :
-                      lib.status === "parcial"   ? "secondary" :
-                      "outline"
+                        lib.status === "parcial" ? "secondary" :
+                          "outline"
                     }
                   >
                     {lib.status === "concluido" ? "Concluído" : lib.status === "parcial" ? "Parcial" : "Pendente"}
