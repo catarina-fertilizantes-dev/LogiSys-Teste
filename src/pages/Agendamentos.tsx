@@ -16,12 +16,12 @@ import { useToast } from "@/hooks/use-toast";
 type AgendamentoStatus = "confirmado" | "pendente" | "concluido" | "cancelado";
 
 interface AgendamentoItem {
-  id: string; // UUID
+  id: string;
   cliente: string;
   produto: string;
   armazem: string;
   quantidade: number;
-  data: string; // dd/mm/yyyy
+  data: string;
   horario: string;
   placa: string;
   motorista: string;
@@ -68,7 +68,7 @@ const parseDate = (d: string) => {
   return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
 };
 
-// Função para validar campos obrigatórios e formato
+// Validação dos campos obrigatórios e formato
 function validateAgendamento(ag: typeof novoAgendamento) {
   const errors = [];
   if (!ag.liberacao) errors.push("Liberação");
@@ -81,7 +81,6 @@ function validateAgendamento(ag: typeof novoAgendamento) {
   return errors;
 }
 
-// Função para formatar placas e documentos
 function formatPlaca(placa: string) {
   return placa
     .toUpperCase()
@@ -91,7 +90,6 @@ function formatPlaca(placa: string) {
 }
 
 function formatCPF(cpf: string) {
-  // Remove tudo que não é número e formata
   let num = cpf.replace(/\D/g, "").padStart(11, "0").slice(0, 11);
   return num.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
 }
@@ -106,13 +104,17 @@ const Agendamentos = () => {
   const { data: currentCliente } = useQuery({
     queryKey: ["current-cliente", user?.id],
     queryFn: async () => {
+      console.log("[LOG] Buscando cliente atual por user_id", user?.id);
       if (!user || userRole !== "cliente") return null;
       const { data, error } = await supabase
         .from("clientes")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (error) throw error;
+      if (error) {
+        console.error("[LOG][ERROR] Erro ao buscar cliente:", error);
+        throw error;
+      }
       return data;
     },
     enabled: !!user && userRole === "cliente",
@@ -122,6 +124,7 @@ const Agendamentos = () => {
   const { data: agendamentosData, isLoading, error } = useQuery({
     queryKey: ["agendamentos", currentCliente?.id],
     queryFn: async () => {
+      console.log("[LOG] Buscando agendamentos do cliente", currentCliente?.id);
       const { data, error } = await supabase
         .from("agendamentos")
         .select(`
@@ -148,43 +151,54 @@ const Agendamentos = () => {
         `)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error("[LOG][ERROR] Erro ao buscar agendamentos:", error);
+        throw error;
+      }
 
-      // Filter by customer on client-side if role is cliente
       let filteredData = data || [];
       if (userRole === "cliente" && currentCliente?.id) {
         filteredData = filteredData.filter((ag: any) =>
           ag.liberacao?.cliente_id === currentCliente.id
         );
       }
+
+      console.log("[LOG] Agendamentos carregados:", filteredData?.length, filteredData);
       return filteredData;
     },
-    refetchInterval: 30000, // Atualiza a cada 30s
+    refetchInterval: 30000,
     enabled: userRole !== "cliente" || !!currentCliente?.id,
+    onError: (err) => {
+      console.error("[LOG][ERROR] Erro global ao carregar agendamentos:", err);
+    }
   });
 
   const agendamentos = useMemo(() => {
     if (!agendamentosData) return [];
-    return agendamentosData.map((item: any) => ({
-      id: item.id,
-      cliente: item.liberacao?.clientes?.nome || "N/A",
-      produto: item.liberacao?.produto?.nome || "N/A",
-      quantidade: item.quantidade,
-      data: new Date(item.data_retirada).toLocaleDateString("pt-BR"),
-      horario: item.horario || "00:00",
-      placa: item.placa_caminhao || "N/A",
-      motorista: item.motorista_nome || "N/A",
-      documento: item.motorista_documento || "N/A",
-      pedido: item.liberacao?.pedido_interno || "N/A",
-      status: item.status as AgendamentoStatus,
-      armazem: item.liberacao?.armazem?.cidade || item.liberacao?.armazem?.estado,
-      produto_id: item.liberacao?.produto?.id,
-      armazem_id: item.liberacao?.armazem?.id,
-      liberacao_id: item.liberacao?.id,
-    }));
+    try {
+      return agendamentosData.map((item: any) => ({
+        id: item.id,
+        cliente: item.liberacao?.clientes?.nome || "N/A",
+        produto: item.liberacao?.produto?.nome || "N/A",
+        quantidade: item.quantidade,
+        data: new Date(item.data_retirada).toLocaleDateString("pt-BR"),
+        horario: item.horario || "00:00",
+        placa: item.placa_caminhao || "N/A",
+        motorista: item.motorista_nome || "N/A",
+        documento: item.motorista_documento || "N/A",
+        pedido: item.liberacao?.pedido_interno || "N/A",
+        status: item.status as AgendamentoStatus,
+        armazem: item.liberacao?.armazem?.cidade || item.liberacao?.armazem?.estado,
+        produto_id: item.liberacao?.produto?.id,
+        armazem_id: item.liberacao?.armazem?.id,
+        liberacao_id: item.liberacao?.id,
+      }));
+    } catch (err) {
+      console.error("[LOG][ERROR] erro ao processar agendamentos", agendamentosData, err);
+      return [];
+    }
   }, [agendamentosData]);
 
-  // Dialog "Novo Agendamento"
   const [dialogOpen, setDialogOpen] = useState(false);
   const [novoAgendamento, setNovoAgendamento] = useState({
     liberacao: "",
@@ -197,12 +211,14 @@ const Agendamentos = () => {
     tipoCaminhao: "",
     observacoes: "",
   });
-  const [formError, setFormError] = useState(""); // Adicionado para erro abaixo dos inputs
+  const [formError, setFormError] = useState("");
 
-  // Buscar liberações pendentes para o formulário
+  // Buscar liberações pendentes
   const { data: liberacoesPendentes } = useQuery({
     queryKey: ["liberacoes-pendentes", currentCliente?.id],
     queryFn: async () => {
+      console.log("[LOG] Buscando liberações pendentes (cliente_id)", currentCliente?.id);
+
       let query = supabase
         .from("liberacoes")
         .select(`
@@ -222,7 +238,10 @@ const Agendamentos = () => {
         query = query.eq("cliente_id", currentCliente.id);
       }
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) {
+        console.error("[LOG][ERROR] liberacoesPendentes", error);
+        throw error;
+      }
       return data || [];
     },
     enabled: userRole !== "cliente" || !!currentCliente?.id,
@@ -244,7 +263,9 @@ const Agendamentos = () => {
   };
 
   const handleCreateAgendamento = async () => {
-    setFormError(""); // Limpa erro anterior
+    setFormError("");
+    console.log("[LOG] handleCreateAgendamento - dados", novoAgendamento);
+
     const erros = validateAgendamento(novoAgendamento);
     if (erros.length > 0) {
       setFormError("Preencha: " + erros.join(", "));
@@ -253,6 +274,7 @@ const Agendamentos = () => {
         title: "Campos obrigatórios ausentes ou inválidos",
         description: "Preencha: " + erros.join(", "),
       });
+      console.warn("[LOG][VALIDATION] Falha na validação:", erros, novoAgendamento);
       return;
     }
 
@@ -260,31 +282,35 @@ const Agendamentos = () => {
     if (Number.isNaN(qtdNum) || qtdNum <= 0) {
       setFormError("Quantidade inválida.");
       toast({ variant: "destructive", title: "Quantidade inválida" });
+      console.warn("[LOG][VALIDATION] Quantidade inválida:", qtdNum);
       return;
     }
 
     try {
-      // Formatação de campos
       const formattedPlaca = formatPlaca(novoAgendamento.placa);
       const formattedCPF = formatCPF(novoAgendamento.documento);
 
       const { data: userData } = await supabase.auth.getUser();
+      console.log("[LOG] Dados userData:", userData.user);
+
+      const insertPayload = {
+        liberacao_id: novoAgendamento.liberacao,
+        quantidade: qtdNum,
+        data_retirada: novoAgendamento.data,
+        horario: novoAgendamento.horario,
+        placa_caminhao: formattedPlaca,
+        motorista_nome: novoAgendamento.motorista.trim(),
+        motorista_documento: formattedCPF,
+        tipo_caminhao: novoAgendamento.tipoCaminhao || null,
+        observacoes: novoAgendamento.observacoes || null,
+        status: "confirmado",
+        created_by: userData.user?.id,
+      };
+      console.log("[LOG][QUERY] Payload do insert:", insertPayload);
 
       const { data: agendData, error: errAgend } = await supabase
         .from("agendamentos")
-        .insert({
-          liberacao_id: novoAgendamento.liberacao,
-          quantidade: qtdNum,
-          data_retirada: novoAgendamento.data,
-          horario: novoAgendamento.horario,
-          placa_caminhao: formattedPlaca,
-          motorista_nome: novoAgendamento.motorista.trim(),
-          motorista_documento: formattedCPF,
-          tipo_caminhao: novoAgendamento.tipoCaminhao || null,
-          observacoes: novoAgendamento.observacoes || null,
-          status: "confirmado",
-          created_by: userData.user?.id,
-        })
+        .insert(insertPayload)
         .select(`
           id,
           data_retirada,
@@ -296,20 +322,35 @@ const Agendamentos = () => {
         `)
         .single();
 
+      console.log("[LOG][QUERY] Resposta do insert", { agendData, errAgend });
+
       if (errAgend) {
         if (
-          errAgend.message?.includes("violates not-null constraint") ||
-          errAgend.code === "23502"
+          errAgend.message?.includes("stack depth limit exceeded") ||
+          errAgend.code === "54001"
         ) {
-          setFormError("Erro do banco: campo obrigatório não enviado (verifique todos os campos).");
+          setFormError("Erro de stack depth (backend/database). Consulte a equipe backend.");
           toast({
             variant: "destructive",
             title: "Erro ao criar agendamento",
-            description: "Erro do banco: campo obrigatório não enviado (verifique todos os campos).",
+            description: "Erro do banco: stack depth limit exceeded. Consulte o suporte.",
           });
+          console.error("[LOG][ERROR] stack depth exceeded", errAgend);
+        } else if (
+          errAgend.message?.includes("violates not-null constraint") ||
+          errAgend.code === "23502"
+        ) {
+          setFormError("Campo obrigatório não enviado: verifique todos os campos.");
+          toast({
+            variant: "destructive",
+            title: "Erro ao criar agendamento",
+            description: "Erro do banco: campo obrigatório não enviado.",
+          });
+          console.error("[LOG][ERROR] not-null constraint", errAgend);
         } else {
           setFormError(errAgend.message || "Erro desconhecido");
           toast({ variant: "destructive", title: "Erro ao criar agendamento", description: errAgend.message });
+          console.error("[LOG][ERROR]", errAgend);
         }
         return;
       }
@@ -325,23 +366,31 @@ const Agendamentos = () => {
 
     } catch (err: any) {
       setFormError(err.message || "Erro desconhecido.");
-      if (err.message?.includes("violates not-null constraint")) {
+      if (err.message?.includes("stack depth limit exceeded")) {
         toast({
           variant: "destructive",
           title: "Erro ao criar agendamento",
-          description: "Erro do banco: campo obrigatório não enviado (verifique todos os campos).",
+          description: "Erro do banco: stack depth limit exceeded.",
         });
+        console.error("[LOG][CATCH] stack depth exceeded", err);
+      } else if (err.message?.includes("violates not-null constraint")) {
+        toast({
+          variant: "destructive",
+          title: "Erro ao criar agendamento",
+          description: "Erro do banco: campo obrigatório não enviado.",
+        });
+        console.error("[LOG][CATCH] not-null constraint", err);
       } else {
         toast({
           variant: "destructive",
           title: "Erro ao criar agendamento",
           description: err instanceof Error ? err.message : "Erro desconhecido"
         });
+        console.error("[LOG][CATCH] erro desconhecido", err);
       }
     }
   };
 
-  /* Filtros compactos + colapsáveis */
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<AgendamentoStatus[]>([]);
@@ -353,24 +402,29 @@ const Agendamentos = () => {
   const clearFilters = () => { setSearch(""); setSelectedStatuses([]); setDateFrom(""); setDateTo(""); };
 
   const filteredAgendamentos = useMemo(() => {
-    return agendamentos.filter((a) => {
-      const term = search.trim().toLowerCase();
-      if (term) {
-        const hay = `${a.cliente} ${a.produto} ${a.pedido} ${a.motorista}`.toLowerCase();
-        if (!hay.includes(term)) return false;
-      }
-      if (selectedStatuses.length > 0 && !selectedStatuses.includes(a.status)) return false;
-      if (dateFrom) {
-        const from = new Date(dateFrom);
-        if (parseDate(a.data) < from) return false;
-      }
-      if (dateTo) {
-        const to = new Date(dateTo);
-        to.setHours(23, 59, 59, 999);
-        if (parseDate(a.data) > to) return false;
-      }
-      return true;
-    });
+    try {
+      return agendamentos.filter((a) => {
+        const term = search.trim().toLowerCase();
+        if (term) {
+          const hay = `${a.cliente} ${a.produto} ${a.pedido} ${a.motorista}`.toLowerCase();
+          if (!hay.includes(term)) return false;
+        }
+        if (selectedStatuses.length > 0 && !selectedStatuses.includes(a.status)) return false;
+        if (dateFrom) {
+          const from = new Date(dateFrom);
+          if (parseDate(a.data) < from) return false;
+        }
+        if (dateTo) {
+          const to = new Date(dateTo);
+          to.setHours(23, 59, 59, 999);
+          if (parseDate(a.data) > to) return false;
+        }
+        return true;
+      });
+    } catch (err) {
+      console.error("[LOG][ERROR] erro ao filtrar agendamentos", err, agendamentos);
+      return [];
+    }
   }, [agendamentos, search, selectedStatuses, dateFrom, dateTo]);
 
   const showingCount = filteredAgendamentos.length;
@@ -378,6 +432,7 @@ const Agendamentos = () => {
   const activeAdvancedCount = (selectedStatuses.length ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
 
   if (isLoading) {
+    console.log("[LOG] isLoading agendamentos...");
     return (
       <div className="min-h-screen bg-background">
         <PageHeader title="Agendamentos de Retirada" description="Carregando..." actions={<></>} />
@@ -390,6 +445,7 @@ const Agendamentos = () => {
   }
 
   if (error) {
+    console.error("[LOG][ERROR] erro final renderização", error);
     return (
       <div className="min-h-screen bg-background">
         <PageHeader title="Agendamentos de Retirada" description="Erro ao carregar dados" actions={<></>} />
@@ -550,7 +606,6 @@ const Agendamentos = () => {
         }
       />
 
-      {/* Barra compacta */}
       <div className="container mx-auto px-6 pt-3">
         <div className="flex items-center gap-3">
           <Input className="h-9 flex-1" placeholder="Buscar por cliente, produto, pedido ou motorista..." value={search} onChange={(e) => setSearch(e.target.value)} />
