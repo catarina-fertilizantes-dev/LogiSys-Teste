@@ -17,14 +17,26 @@ import { useToast } from "@/hooks/use-toast";
 function maskPlaca(value: string): string {
   let up = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (up.length > 7) up = up.slice(0, 7);
-  if (up.length === 7)
-    return up.replace(/^([A-Z]{3})(\d{4})$/, "$1-$2");
-  if (up.length > 3)
-    return up.replace(/^([A-Z]{3})(\d{0,4})$/, "$1-$2");
+
+  // Nova placa Mercosul: 3 letras + 1 número + 1 letra + 2 números (ex: BCD1A23)
+  // Velha: 3 letras + 4 números (ex: ABC1234)
+  // Ao digitar, aplica hífen depois dos 3 primeiros caracteres
+
+  if (up.length === 7) {
+    // Placa Mercosul pode ser ABC1D23 ou ABC1234
+    // Para exibir, coloca hífen após 3 letras
+    // Se caractere 4 for letra, formato Mercosul: ABC-1D23
+    if (/[A-Z]{3}[0-9][A-Z][0-9]{2}/.test(up)) {
+      return up.replace(/^([A-Z]{3})([0-9][A-Z][0-9]{2})$/, "$1-$2");
+    }
+    // Placa antiga: ABC-1234
+    return up.replace(/^([A-Z]{3})([0-9]{4})$/, "$1-$2");
+  }
+  if (up.length > 3) return `${up.slice(0, 3)}-${up.slice(3)}`;
   return up;
 }
-function formatPlaca(placa) {
-  return maskPlaca(placa);
+function formatPlaca(placa: string) {
+  return maskPlaca(placa ?? "");
 }
 function maskCPF(value: string): string {
   let cleaned = value.replace(/\D/g, "").slice(0, 11);
@@ -36,30 +48,42 @@ function maskCPF(value: string): string {
     return cleaned.replace(/^(\d{3})(\d{0,3})$/, "$1.$2");
   return cleaned;
 }
-function formatCPF(cpf) {
-  const cleaned = cpf.replace(/\D/g, "").slice(0, 11);
+function formatCPF(cpf: string) {
+  const cleaned = (cpf ?? "").replace(/\D/g, "").slice(0, 11);
   if (cleaned.length < 11) return maskCPF(cleaned);
   return cleaned.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
 }
 
-const parseDate = (d) => {
+const parseDate = (d: string) => {
   const [dd, mm, yyyy] = d.split("/");
   return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
 };
 
 type AgendamentoStatus = "confirmado" | "pendente" | "concluido" | "cancelado";
 
-const validateAgendamento = (ag) => {
+const validateAgendamento = (ag: any) => {
   const errors = [];
   if (!ag.liberacao) errors.push("Liberação");
   if (!ag.quantidade || Number(ag.quantidade) <= 0) errors.push("Quantidade");
   if (!ag.data || isNaN(Date.parse(ag.data))) errors.push("Data");
   if (!ag.horario || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(ag.horario)) errors.push("Horário");
-  if (!ag.placa || ag.placa.replace(/[^A-Z0-9]/gi, "").length < 7) errors.push("Placa do veículo");
+  // Placa: precisar de pelo menos 7 caracteres válidos e formatação correta
+  const placaSemMascara = (ag.placa ?? "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  if (placaSemMascara.length < 7) errors.push("Placa do veículo");
+  if (!validatePlaca(placaSemMascara)) errors.push("Formato da placa inválido");
   if (!ag.motorista || ag.motorista.trim().length < 3) errors.push("Nome do motorista");
   if (!ag.documento || ag.documento.replace(/\D/g, "").length !== 11) errors.push("Documento (CPF) do motorista");
   return errors;
 };
+
+// Validação de placa Mercosul e antiga
+function validatePlaca(placa: string) {
+  // Antiga: 3 letras + 4 números (ex: ABC1234)
+  if (/^[A-Z]{3}[0-9]{4}$/.test(placa)) return true;
+  // Mercosul: 3 letras + 1 número + 1 letra + 2 números (ex: ABC1D23)
+  if (/^[A-Z]{3}[0-9][A-Z][0-9]{2}$/.test(placa)) return true;
+  return false;
+}
 
 const Agendamentos = () => {
   const { toast } = useToast();
@@ -269,8 +293,9 @@ const Agendamentos = () => {
       return;
     }
     try {
-      const placaSemMascara = novoAgendamento.placa.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-      const cpfSemMascara = novoAgendamento.documento.replace(/\D/g, "");
+      // Remove a máscara da placa (salvar SEM máscara!)
+      const placaSemMascara = (novoAgendamento.placa ?? "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+      const cpfSemMascara = (novoAgendamento.documento ?? "").replace(/\D/g, "");
 
       const { data: userData } = await supabase.auth.getUser();
       const { data: agendData, error: errAgend } = await supabase
@@ -496,9 +521,13 @@ const Agendamentos = () => {
                         placa: maskPlaca(e.target.value),
                       }))
                     }
-                    placeholder="Ex: ABC-1234"
-                    maxLength={8}
+                    placeholder="Ex: ABC-1234 ou ABC-1D23"
+                    maxLength={9}
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    inputMode="text"
                   />
+                  <p className="text-xs text-muted-foreground">Formato antigo (ABC-1234) ou Mercosul (ABC-1D23)</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
