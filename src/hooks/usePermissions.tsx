@@ -30,7 +30,6 @@ export const usePermissions = () => {
 
   useEffect(() => {
     const fetchPermissions = async () => {
-      // Wait for auth to finish loading
       if (authLoading) {
         console.log('🔍 [DEBUG] usePermissions - Waiting for auth to load...');
         return;
@@ -66,7 +65,6 @@ export const usePermissions = () => {
         }
 
         const permsMap: Record<string, Permission> = {};
-        
         data.forEach(perm => {
           permsMap[perm.resource] = {
             can_create: !!perm.can_create,
@@ -89,7 +87,14 @@ export const usePermissions = () => {
     fetchPermissions();
   }, [userRole, user?.id, authLoading]);
 
+  /**
+   * Permite visualizar ou manipular o recurso apenas para admin ou logistica.
+   */
   const canAccess = (resource: Resource, action: 'create' | 'read' | 'update' | 'delete' = 'read'): boolean => {
+    // Permissão extra: admin ou logistica sempre podem ver "clientes"
+    if (resource === "clientes" && (userRole === "admin" || userRole === "logistica")) {
+      return true;
+    }
     const perm = permissions[resource];
     if (!perm) {
       console.log(`🔍 [DEBUG] canAccess - No permission found for resource: ${resource}`);
@@ -113,7 +118,6 @@ export const usePermissions = () => {
       default:
         hasAccess = false;
     }
-    
     console.log(`🔍 [DEBUG] canAccess - Resource: ${resource}, Action: ${action}, Access: ${hasAccess}`);
     return hasAccess;
   };
