@@ -68,6 +68,34 @@ const parseDate = (d: string) => {
   return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
 };
 
+// Função para validar campos obrigatórios e formato
+function validateAgendamento(ag: typeof novoAgendamento) {
+  const errors = [];
+  if (!ag.liberacao) errors.push("Liberação");
+  if (!ag.quantidade || Number(ag.quantidade) <= 0) errors.push("Quantidade");
+  if (!ag.data || isNaN(Date.parse(ag.data))) errors.push("Data");
+  if (!ag.horario || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(ag.horario)) errors.push("Horário");
+  if (!ag.placa || ag.placa.replace(/[^A-Z0-9]/gi, "").length < 7) errors.push("Placa do veículo");
+  if (!ag.motorista || ag.motorista.trim().length < 3) errors.push("Nome do motorista");
+  if (!ag.documento || !/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/.test(ag.documento)) errors.push("Documento (CPF) do motorista");
+  return errors;
+}
+
+// Função para formatar placas e documentos
+function formatPlaca(placa: string) {
+  return placa
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .replace(/^([A-Z]{3})([0-9]{4})$/, "$1-$2")
+    .slice(0, 8);
+}
+
+function formatCPF(cpf: string) {
+  // Remove tudo que não é número e formata
+  let num = cpf.replace(/\D/g, "").padStart(11, "0").slice(0, 11);
+  return num.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+}
+
 const Agendamentos = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -79,13 +107,11 @@ const Agendamentos = () => {
     queryKey: ["current-cliente", user?.id],
     queryFn: async () => {
       if (!user || userRole !== "cliente") return null;
-      
       const { data, error } = await supabase
         .from("clientes")
         .select("id")
         .eq("user_id", user.id)
         .maybeSingle();
-      
       if (error) throw error;
       return data;
     },
@@ -96,7 +122,6 @@ const Agendamentos = () => {
   const { data: agendamentosData, isLoading, error } = useQuery({
     queryKey: ["agendamentos", currentCliente?.id],
     queryFn: async () => {
-      console.log("🔍 [DEBUG] Buscando agendamentos...");
       const { data, error } = await supabase
         .from("agendamentos")
         .select(`
@@ -122,21 +147,16 @@ const Agendamentos = () => {
           )
         `)
         .order("created_at", { ascending: false });
-      
-      if (error) {
-        console.error("❌ [ERROR] Erro ao buscar agendamentos:", error);
-        throw error;
-      }
+
+      if (error) throw error;
 
       // Filter by customer on client-side if role is cliente
       let filteredData = data || [];
       if (userRole === "cliente" && currentCliente?.id) {
-        filteredData = filteredData.filter((ag: any) => 
+        filteredData = filteredData.filter((ag: any) =>
           ag.liberacao?.cliente_id === currentCliente.id
         );
       }
-
-      console.log("✅ [DEBUG] Agendamentos carregados:", filteredData?.length);
       return filteredData;
     },
     refetchInterval: 30000, // Atualiza a cada 30s
@@ -177,13 +197,12 @@ const Agendamentos = () => {
     tipoCaminhao: "",
     observacoes: "",
   });
+  const [formError, setFormError] = useState(""); // Adicionado para erro abaixo dos inputs
 
   // Buscar liberações pendentes para o formulário
   const { data: liberacoesPendentes } = useQuery({
     queryKey: ["liberacoes-pendentes", currentCliente?.id],
     queryFn: async () => {
-      console.log("🔍 [DEBUG] Buscando liberações pendentes...");
-      
       let query = supabase
         .from("liberacoes")
         .select(`
@@ -199,15 +218,11 @@ const Agendamentos = () => {
         .in("status", ["pendente", "parcial"])
         .order("created_at", { ascending: false });
 
-      // Filter by customer if role is cliente
       if (userRole === "cliente" && currentCliente?.id) {
         query = query.eq("cliente_id", currentCliente.id);
       }
-      
       const { data, error } = await query;
-      
       if (error) throw error;
-      console.log("✅ [DEBUG] Liberações pendentes:", data?.length);
       return data || [];
     },
     enabled: userRole !== "cliente" || !!currentCliente?.id,
@@ -225,37 +240,46 @@ const Agendamentos = () => {
       tipoCaminhao: "",
       observacoes: "",
     });
+    setFormError("");
   };
 
   const handleCreateAgendamento = async () => {
-    const { liberacao, quantidade, data, horario, placa, motorista, documento } = novoAgendamento;
-
-    if (!liberacao || !quantidade || !data || !horario || !placa.trim() || !motorista.trim() || !documento.trim()) {
-      toast({ variant: "destructive", title: "Preencha todos os campos obrigatórios" });
+    setFormError(""); // Limpa erro anterior
+    const erros = validateAgendamento(novoAgendamento);
+    if (erros.length > 0) {
+      setFormError("Preencha: " + erros.join(", "));
+      toast({
+        variant: "destructive",
+        title: "Campos obrigatórios ausentes ou inválidos",
+        description: "Preencha: " + erros.join(", "),
+      });
       return;
     }
 
-    const qtdNum = Number(quantidade);
+    const qtdNum = Number(novoAgendamento.quantidade);
     if (Number.isNaN(qtdNum) || qtdNum <= 0) {
+      setFormError("Quantidade inválida.");
       toast({ variant: "destructive", title: "Quantidade inválida" });
       return;
     }
 
     try {
-      console.log("🔍 [DEBUG] Criando agendamento:", { liberacao, quantidade: qtdNum, data, horario });
+      // Formatação de campos
+      const formattedPlaca = formatPlaca(novoAgendamento.placa);
+      const formattedCPF = formatCPF(novoAgendamento.documento);
 
       const { data: userData } = await supabase.auth.getUser();
-      
+
       const { data: agendData, error: errAgend } = await supabase
         .from("agendamentos")
         .insert({
-          liberacao_id: liberacao,
+          liberacao_id: novoAgendamento.liberacao,
           quantidade: qtdNum,
-          data_retirada: data,
-          horario: horario,
-          placa_caminhao: placa.trim().toUpperCase(),
-          motorista_nome: motorista.trim(),
-          motorista_documento: documento.trim(),
+          data_retirada: novoAgendamento.data,
+          horario: novoAgendamento.horario,
+          placa_caminhao: formattedPlaca,
+          motorista_nome: novoAgendamento.motorista.trim(),
+          motorista_documento: formattedCPF,
           tipo_caminhao: novoAgendamento.tipoCaminhao || null,
           observacoes: novoAgendamento.observacoes || null,
           status: "confirmado",
@@ -273,30 +297,47 @@ const Agendamentos = () => {
         .single();
 
       if (errAgend) {
-        console.error("❌ [ERROR] Erro ao criar agendamento:", errAgend);
-        throw new Error(`Erro ao criar agendamento: ${errAgend.message} (${errAgend.code || 'N/A'})`);
+        if (
+          errAgend.message?.includes("violates not-null constraint") ||
+          errAgend.code === "23502"
+        ) {
+          setFormError("Erro do banco: campo obrigatório não enviado (verifique todos os campos).");
+          toast({
+            variant: "destructive",
+            title: "Erro ao criar agendamento",
+            description: "Erro do banco: campo obrigatório não enviado (verifique todos os campos).",
+          });
+        } else {
+          setFormError(errAgend.message || "Erro desconhecido");
+          toast({ variant: "destructive", title: "Erro ao criar agendamento", description: errAgend.message });
+        }
+        return;
       }
 
-      console.log("✅ [SUCCESS] Agendamento criado:", agendData);
-
-      toast({ 
-        title: "Agendamento criado com sucesso!", 
-        description: `${(agendData.liberacao as any)?.clientes?.nome} - ${new Date(agendData.data_retirada).toLocaleDateString("pt-BR")} - ${qtdNum}t` 
+      toast({
+        title: "Agendamento criado com sucesso!",
+        description: `${(agendData.liberacao as any)?.clientes?.nome ?? ""} - ${new Date(agendData.data_retirada).toLocaleDateString("pt-BR")} - ${qtdNum}t`
       });
-
       resetFormNovoAgendamento();
       setDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["agendamentos"] });
       queryClient.invalidateQueries({ queryKey: ["liberacoes-pendentes"] });
 
-    } catch (err: unknown) {
-      console.error("❌ [ERROR] Erro geral ao criar agendamento:", err);
-      
-      toast({
-        variant: "destructive",
-        title: "Erro ao criar agendamento",
-        description: err instanceof Error ? err.message : "Erro desconhecido"
-      });
+    } catch (err: any) {
+      setFormError(err.message || "Erro desconhecido.");
+      if (err.message?.includes("violates not-null constraint")) {
+        toast({
+          variant: "destructive",
+          title: "Erro ao criar agendamento",
+          description: "Erro do banco: campo obrigatório não enviado (verifique todos os campos).",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Erro ao criar agendamento",
+          description: err instanceof Error ? err.message : "Erro desconhecido"
+        });
+      }
     }
   };
 
@@ -379,11 +420,10 @@ const Agendamentos = () => {
               <div className="space-y-4 py-2">
                 <div className="space-y-2">
                   <Label htmlFor="liberacao">Liberação *</Label>
-                  <Select 
-                    value={novoAgendamento.liberacao} 
+                  <Select
+                    value={novoAgendamento.liberacao}
                     onValueChange={(v) => {
                       setNovoAgendamento((s) => ({ ...s, liberacao: v }));
-                      // Auto-fill quantidade disponível
                       const lib = liberacoesPendentes?.find((l) => l.id === v);
                       if (lib) {
                         const disponivel = lib.quantidade_liberada - lib.quantidade_retirada;
@@ -409,13 +449,13 @@ const Agendamentos = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="quantidade">Quantidade (t) *</Label>
-                  <Input 
-                    id="quantidade" 
-                    type="number" 
-                    step="0.01" 
+                  <Input
+                    id="quantidade"
+                    type="number"
+                    step="0.01"
                     min="0"
-                    value={novoAgendamento.quantidade} 
-                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, quantidade: e.target.value }))} 
+                    value={novoAgendamento.quantidade}
+                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, quantidade: e.target.value }))}
                     placeholder="0.00"
                   />
                 </div>
@@ -423,31 +463,31 @@ const Agendamentos = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="data">Data *</Label>
-                    <Input 
-                      id="data" 
+                    <Input
+                      id="data"
                       type="date"
-                      value={novoAgendamento.data} 
-                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, data: e.target.value }))} 
+                      value={novoAgendamento.data}
+                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, data: e.target.value }))}
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="horario">Horário *</Label>
-                    <Input 
-                      id="horario" 
+                    <Input
+                      id="horario"
                       type="time"
-                      value={novoAgendamento.horario} 
-                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, horario: e.target.value }))} 
+                      value={novoAgendamento.horario}
+                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, horario: e.target.value }))}
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="placa">Placa do Veículo *</Label>
-                  <Input 
-                    id="placa" 
-                    value={novoAgendamento.placa} 
-                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, placa: e.target.value.toUpperCase() }))} 
+                  <Input
+                    id="placa"
+                    value={novoAgendamento.placa}
+                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, placa: formatPlaca(e.target.value) }))}
                     placeholder="Ex: ABC-1234"
                     maxLength={8}
                   />
@@ -456,44 +496,50 @@ const Agendamentos = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="motorista">Nome do Motorista *</Label>
-                    <Input 
-                      id="motorista" 
-                      value={novoAgendamento.motorista} 
-                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, motorista: e.target.value }))} 
+                    <Input
+                      id="motorista"
+                      value={novoAgendamento.motorista}
+                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, motorista: e.target.value }))}
                       placeholder="Ex: João Silva"
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="documento">Documento (CPF) *</Label>
-                    <Input 
-                      id="documento" 
-                      value={novoAgendamento.documento} 
-                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, documento: e.target.value }))} 
+                    <Input
+                      id="documento"
+                      value={novoAgendamento.documento}
+                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, documento: formatCPF(e.target.value) }))}
                       placeholder="Ex: 123.456.789-00"
+                      maxLength={14}
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="tipoCaminhao">Tipo de Caminhão</Label>
-                  <Input 
-                    id="tipoCaminhao" 
-                    value={novoAgendamento.tipoCaminhao} 
-                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, tipoCaminhao: e.target.value }))} 
+                  <Input
+                    id="tipoCaminhao"
+                    value={novoAgendamento.tipoCaminhao}
+                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, tipoCaminhao: e.target.value }))}
                     placeholder="Ex: Bitrem, Carreta, Truck"
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="observacoes">Observações</Label>
-                  <Input 
-                    id="observacoes" 
-                    value={novoAgendamento.observacoes} 
-                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, observacoes: e.target.value }))} 
+                  <Input
+                    id="observacoes"
+                    value={novoAgendamento.observacoes}
+                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, observacoes: e.target.value }))}
                     placeholder="Informações adicionais sobre o agendamento"
                   />
                 </div>
+                {formError && (
+                  <div className="pt-3 text-destructive text-sm font-semibold border-t">
+                    {formError}
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
@@ -571,8 +617,8 @@ const Agendamentos = () => {
                     <Badge
                       variant={
                         ag.status === "confirmado" ? "default" :
-                        ag.status === "pendente"  ? "secondary" :
-                        ag.status === "concluido" ? "default" : "destructive"
+                          ag.status === "pendente" ? "secondary" :
+                            ag.status === "concluido" ? "default" : "destructive"
                       }
                     >
                       {ag.status === "confirmado" ? "Confirmado" : ag.status === "pendente" ? "Pendente" : ag.status === "concluido" ? "Concluído" : "Cancelado"}
