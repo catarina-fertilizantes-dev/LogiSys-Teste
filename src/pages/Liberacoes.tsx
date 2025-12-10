@@ -56,11 +56,26 @@ const Liberacoes = () => {
     enabled: !!user && userRole === "cliente",
   });
 
-  // Query principal de liberações (agora com filtro por cliente no front)
-  const { data: liberacoesData, isLoading, error } = useQuery({
-    queryKey: ["liberacoes", currentCliente?.id],
+  // Buscar armazém atual vinculado ao usuário logado
+  const { data: currentArmazem } = useQuery({
+    queryKey: ["current-armazem", user?.id],
     queryFn: async () => {
-      console.log("🔍 [DEBUG] Buscando liberações...");
+      if (!user || userRole !== "armazem") return null;
+      const { data, error } = await supabase
+        .from("armazens")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user && userRole === "armazem",
+  });
+
+  // Query principal de liberações (agora com filtro por cliente ou armazem no front)
+  const { data: liberacoesData, isLoading, error } = useQuery({
+    queryKey: ["liberacoes", currentCliente?.id, currentArmazem?.id],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from("liberacoes")
         .select(`
@@ -79,20 +94,19 @@ const Liberacoes = () => {
         `)
         .order("created_at", { ascending: false });
       if (error) {
-        console.error("❌ [ERROR] Erro ao buscar liberações:", error);
         throw error;
       }
-      console.log("✅ [DEBUG] Liberações carregadas:", data?.length);
-
-      // AQUI: Se cliente, mostrar apenas as liberações do cliente logado
       let filtered = data ?? [];
       if (userRole === "cliente" && currentCliente?.id) {
         filtered = filtered.filter((l: any) => l.cliente_id === currentCliente.id);
       }
+      if (userRole === "armazem" && currentArmazem?.id) {
+        filtered = filtered.filter((l: any) => l.armazem?.id === currentArmazem.id);
+      }
       return filtered;
     },
     refetchInterval: 30000,
-    enabled: userRole !== "cliente" || !!currentCliente?.id,
+    enabled: (userRole !== "cliente" || !!currentCliente?.id) && (userRole !== "armazem" || !!currentArmazem?.id),
   });
 
   // Prepara array para grid/cards
@@ -230,8 +244,6 @@ const Liberacoes = () => {
     }
 
     try {
-      console.log("🔍 [DEBUG] Criando liberação:", { produto, armazem, cliente_id, pedido, quantidade: qtdNum });
-
       const { data: userData } = await supabase.auth.getUser();
 
       const { data, error: errLib } = await supabase
@@ -252,10 +264,8 @@ const Liberacoes = () => {
         .single();
 
       if (errLib) {
-        console.error("❌ [ERROR] Erro ao criar liberação:", errLib);
         throw new Error(`Erro ao criar liberação: ${errLib.message} (${errLib.code || 'N/A'})`);
       }
-      console.log("✅ [SUCCESS] Liberação criada:", data);
 
       toast({
         title: "Liberação criada com sucesso!",
@@ -264,11 +274,9 @@ const Liberacoes = () => {
 
       resetFormNovaLiberacao();
       setDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["liberacoes", currentCliente?.id] }); // Invalida query correta
+      queryClient.invalidateQueries({ queryKey: ["liberacoes", currentCliente?.id, currentArmazem?.id] });
 
     } catch (err: unknown) {
-      console.error("❌ [ERROR] Erro geral ao criar liberação:", err);
-
       toast({
         variant: "destructive",
         title: "Erro ao criar liberação",
