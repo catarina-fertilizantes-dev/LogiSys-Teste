@@ -49,7 +49,7 @@ const Agendamentos = () => {
   const { hasRole, userRole, user } = useAuth();
   const canCreate = hasRole("admin") || hasRole("logistica") || hasRole("cliente");
 
-  // Pega o cliente vinculado ao usuário atual
+  // Buscar cliente atual vinculado ao usuário logado
   const { data: currentCliente } = useQuery({
     queryKey: ["current-cliente", user?.id],
     queryFn: async () => {
@@ -65,7 +65,7 @@ const Agendamentos = () => {
     enabled: !!user && userRole === "cliente",
   });
 
-  // Busca agendamentos do Supabase
+  // Buscar agendamentos do banco
   const { data: agendamentosData, isLoading, error } = useQuery({
     queryKey: ["agendamentos", currentCliente?.id],
     queryFn: async () => {
@@ -94,7 +94,6 @@ const Agendamentos = () => {
           )
         `)
         .order("created_at", { ascending: false });
-
       if (error) throw error;
       let filteredData = data || [];
       if (userRole === "cliente" && currentCliente?.id) {
@@ -115,20 +114,26 @@ const Agendamentos = () => {
       cliente: item.liberacao?.clientes?.nome || "N/A",
       produto: item.liberacao?.produto?.nome || "N/A",
       quantidade: item.quantidade,
-      data: new Date(item.data_retirada).toLocaleDateString("pt-BR"),
+      data: item.data_retirada
+        ? new Date(item.data_retirada).toLocaleDateString("pt-BR")
+        : "",
       horario: item.horario || "00:00",
       placa: item.placa_caminhao || "N/A",
       motorista: item.motorista_nome || "N/A",
       documento: item.motorista_documento || "N/A",
       pedido: item.liberacao?.pedido_interno || "N/A",
       status: item.status as AgendamentoStatus,
-      armazem: item.liberacao?.armazem?.cidade || item.liberacao?.armazem?.estado,
+      armazem:
+        item.liberacao?.armazem?.cidade ||
+        item.liberacao?.armazem?.estado ||
+        "",
       produto_id: item.liberacao?.produto?.id,
       armazem_id: item.liberacao?.armazem?.id,
       liberacao_id: item.liberacao?.id,
     }));
   }, [agendamentosData]);
 
+  // Estado do form/modal
   const [dialogOpen, setDialogOpen] = useState(false);
   const [novoAgendamento, setNovoAgendamento] = useState({
     liberacao: "",
@@ -143,7 +148,7 @@ const Agendamentos = () => {
   });
   const [formError, setFormError] = useState("");
 
-  // Liberacoes pendentes para select do form
+  // Buscar liberações pendentes para o formulário
   const { data: liberacoesPendentes } = useQuery({
     queryKey: ["liberacoes-pendentes", currentCliente?.id],
     queryFn: async () => {
@@ -210,6 +215,7 @@ const Agendamentos = () => {
       const formattedCPF = formatCPF(novoAgendamento.documento);
       const { data: userData } = await supabase.auth.getUser();
 
+      // **IMPORTANTE**: Enviar created_by explícito! (com policy aberta, campo é obrigatório)
       const { data: agendData, error: errAgend } = await supabase
         .from("agendamentos")
         .insert({
@@ -223,6 +229,7 @@ const Agendamentos = () => {
           tipo_caminhao: novoAgendamento.tipoCaminhao || null,
           observacoes: novoAgendamento.observacoes || null,
           status: "confirmado",
+          // User logado (obrigatório c/ not null e policy aberta)
           created_by: userData.user?.id,
         })
         .select(`
