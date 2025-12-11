@@ -80,11 +80,7 @@ const Estoque = () => {
         `)
         .order("updated_at", { ascending: false });
       if (error) {
-        toast({
-          variant: "destructive",
-          title: "Erro ao buscar estoque",
-          description: error.message,
-        });
+        toast({ variant: "destructive", title: "Erro ao buscar estoque", description: error.message });
         throw error;
       }
       return data;
@@ -101,11 +97,7 @@ const Estoque = () => {
         .select("id, nome, unidade")
         .order("nome");
       if (error) {
-        toast({
-          variant: "destructive",
-          title: "Erro ao buscar produtos",
-          description: error.message,
-        });
+        toast({ variant: "destructive", title: "Erro ao buscar produtos", description: error.message });
         return [];
       }
       return data || [];
@@ -123,15 +115,12 @@ const Estoque = () => {
         .eq("ativo", true)
         .order("cidade");
       if (error) {
-        toast({
-          variant: "destructive",
-          title: "Erro ao buscar armazéns",
-          description: error.message,
-        });
+        toast({ variant: "destructive", title: "Erro ao buscar armazéns", description: error.message });
         return [];
       }
       return data || [];
     },
+    refetchInterval: 30000,
   });
 
   // Filtro avançado/facil para busca e grid
@@ -140,7 +129,7 @@ const Estoque = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("armazens")
-        .select("id, cidade, estado, ativo")
+        .select("id, nome, cidade, estado, ativo")
         .eq("ativo", true)
         .order("cidade");
       if (error) {
@@ -161,7 +150,7 @@ const Estoque = () => {
     if (!estoqueData) return [];
     const map: { [armazemId: string]: ArmazemEstoque } = {};
     for (const item of estoqueData as SupabaseEstoqueItem[]) {
-      if (!item.armazem || !item.armazem.id) continue;
+      if (!item.armazem || !item.armazem.id || !item.armazem.ativo) continue;
       const armazemId = item.armazem.id;
       if (!map[armazemId]) {
         map[armazemId] = {
@@ -190,6 +179,142 @@ const Estoque = () => {
     });
   }, [estoqueData]);
 
+  // Construir lista de produtos únicos para badges
+  const produtosUnicos = useMemo(() => {
+    const set = new Set<string>();
+    estoquePorArmazem.forEach(armazem =>
+      armazem.produtos.forEach(produto => set.add(produto.produto))
+    );
+    return Array.from(set).sort();
+  }, [estoquePorArmazem]);
+
+  // Construir lista de armazéns únicos para badges
+  const armazensUnicos = useMemo(() => {
+    return estoquePorArmazem.map(a => ({
+      id: a.id,
+      nome: a.nome,
+      cidade: a.cidade,
+      estado: a.estado
+    }));
+  }, [estoquePorArmazem]);
+
+  // Filtro dos cards
+  const [openArmazemId, setOpenArmazemId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selectedProdutos, setSelectedProdutos] = useState<string[]>([]);
+  const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editQuantity, setEditQuantity] = useState<string>("");
+
+  const [selectedStatuses, setSelectedStatuses] = useState<StockStatus[]>([]);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // Filtro final dos armazéns + produtos.
+  const filteredArmazens = useMemo(() => {
+    return estoquePorArmazem
+      .filter((armazem) => {
+        // Filtro por badges de armazém
+        if (selectedWarehouses.length > 0 && !selectedWarehouses.includes(armazem.id)) return false;
+        // Busca textual: armazém ou produto
+        if (search.trim()) {
+          const term = search.trim().toLowerCase();
+          if (
+            !(
+              armazem.nome.toLowerCase().includes(term) ||
+              armazem.cidade.toLowerCase().includes(term) ||
+              (armazem.produtos.some(prod => prod.produto.toLowerCase().includes(term)))
+            )
+          ) {
+            return false;
+          }
+        }
+        // Badge de produto: só armazéns que possuem ao menos um produto selecionado
+        if (selectedProdutos.length > 0) {
+          return armazem.produtos.some((prod) => selectedProdutos.includes(prod.produto));
+        }
+        return true;
+      })
+      .map((armazem) => {
+        let produtos = armazem.produtos;
+        // Filtro de status do produto
+        if (selectedStatuses.length > 0) {
+          produtos = produtos.filter((p) => selectedStatuses.includes(p.status));
+        }
+        // Período
+        if (dateFrom) {
+          const from = new Date(dateFrom);
+          produtos = produtos.filter((p) => parseDate(p.data) >= from);
+        }
+        if (dateTo) {
+          const to = new Date(dateTo);
+          to.setHours(23, 59, 59, 999);
+          produtos = produtos.filter((p) => parseDate(p.data) <= to);
+        }
+        // Filtro textual aplicado aos produtos
+        if (search.trim()) {
+          const term = search.trim().toLowerCase();
+          produtos = produtos.filter(
+            p => p.produto.toLowerCase().includes(term) ||
+              armazem.nome.toLowerCase().includes(term) ||
+              armazem.cidade.toLowerCase().includes(term)
+          );
+        }
+        // Badge selecionada de produto
+        if (selectedProdutos.length > 0) {
+          produtos = produtos.filter(prod => selectedProdutos.includes(prod.produto));
+        }
+        return { ...armazem, produtos };
+      });
+  }, [estoquePorArmazem, search, selectedProdutos, selectedWarehouses, selectedStatuses, dateFrom, dateTo]);
+
+  const handleUpdateQuantity = async (produtoId: string, newQtyStr: string) => {
+    const newQty = Number(newQtyStr);
+    if (Number.isNaN(newQty) || newQty < 0) {
+      toast({ variant: "destructive", title: "Quantidade inválida", description: "Digite um valor maior ou igual a zero." });
+      return;
+    }
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from("estoque")
+        .update({
+          quantidade: newQty,
+          updated_at: new Date().toISOString(),
+          updated_by: userData.user?.id,
+        })
+        .eq("id", produtoId);
+
+      if (error) {
+        toast({ variant: "destructive", title: "Erro ao atualizar estoque", description: error.message });
+        return;
+      }
+
+      toast({ title: "Quantidade atualizada com sucesso!" });
+      setEditingId(null);
+      queryClient.invalidateQueries({ queryKey: ["estoque"] });
+
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Erro inesperado ao atualizar",
+        description: err instanceof Error ? err.message : String(err)
+      });
+      console.error("❌ [ERROR]", err);
+    }
+  };
+
+  const showingCount = filteredArmazens.reduce((acc, armazem) => acc + armazem.produtos.length, 0);
+  const totalCount = estoquePorArmazem.reduce((acc, armazem) => acc + armazem.produtos.length, 0);
+
+  const activeAdvancedCount =
+    (selectedProdutos.length ? 1 : 0) +
+    (selectedWarehouses.length ? 1 : 0) +
+    (selectedStatuses.length ? 1 : 0) +
+    ((dateFrom || dateTo) ? 1 : 0);
+
+  // Modal de entrada de estoque
   const [dialogOpen, setDialogOpen] = useState(false);
   const [novoProduto, setNovoProduto] = useState({
     produtoId: "",
@@ -198,12 +323,8 @@ const Estoque = () => {
     unidade: "t" as Unidade,
   });
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editQuantity, setEditQuantity] = useState<string>("");
-
-  const resetFormNovoProduto = () => {
+  const resetFormNovoProduto = () =>
     setNovoProduto({ produtoId: "", armazem: "", quantidade: "", unidade: "t" });
-  };
 
   const handleCreateProduto = async () => {
     const { produtoId, armazem, quantidade, unidade } = novoProduto;
@@ -246,7 +367,6 @@ const Estoque = () => {
       toast({ variant: "destructive", title: "Erro ao buscar estoque", description: errBuscaEstoque.message });
       return;
     }
-
     const estoqueAnterior = estoqueAtual?.quantidade || 0;
     const novaQuantidade = estoqueAnterior + qtdNum;
 
@@ -277,133 +397,15 @@ const Estoque = () => {
       return;
     }
 
-    toast({ 
-      title: "Entrada registrada!", 
-      description: `+${qtdNum}${unidade} de ${produtoSelecionado.nome} em ${armazemData.cidade}/${armazemData.estado}. Estoque atual: ${novaQuantidade}${unidade}` 
+    toast({
+      title: "Entrada registrada!",
+      description: `+${qtdNum}${unidade} de ${produtoSelecionado.nome} em ${armazemData.cidade}/${armazemData.estado}. Estoque atual: ${novaQuantidade}${unidade}`
     });
 
     resetFormNovoProduto();
     setDialogOpen(false);
     queryClient.invalidateQueries({ queryKey: ["estoque"] });
   };
-
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [selectedStatuses, setSelectedStatuses] = useState<StockStatus[]>([]);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([]);
-
-  const allStatuses: StockStatus[] = ["normal", "baixo"];
-  const allWarehouses = useMemo(() => {
-    if (!armazensParaFiltro) return [];
-    return armazensParaFiltro
-      .filter(a => a.ativo === true)
-      .map(a => a.cidade)
-      .sort();
-  }, [armazensParaFiltro]);
-
-  const filteredArmazens = useMemo(() => {
-    return estoquePorArmazem.filter((armazem) => {
-      if (selectedWarehouses.length > 0 && !selectedWarehouses.includes(armazem.cidade)) return false;
-      if (search.trim()) {
-        const term = search.trim().toLowerCase();
-        const hay = `${armazem.nome} ${armazem.cidade}/${armazem.estado}`.toLowerCase();
-        if (!hay.includes(term)) return false;
-      }
-      return true;
-    }).map((armazem) => {
-      let produtos = armazem.produtos;
-      if (selectedStatuses.length > 0) {
-        produtos = produtos.filter((p) => selectedStatuses.includes(p.status));
-      }
-      if (dateFrom) {
-        const from = new Date(dateFrom);
-        produtos = produtos.filter((p) => parseDate(p.data) >= from);
-      }
-      if (dateTo) {
-        const to = new Date(dateTo);
-        to.setHours(23, 59, 59, 999);
-        produtos = produtos.filter((p) => parseDate(p.data) <= to);
-      }
-      if (search.trim()) {
-        const term = search.trim().toLowerCase();
-        produtos = produtos.filter(
-          p => p.produto.toLowerCase().includes(term)
-        );
-      }
-      return { ...armazem, produtos };
-    });
-  }, [estoquePorArmazem, search, selectedStatuses, selectedWarehouses, dateFrom, dateTo]);
-
-  const [openArmazemId, setOpenArmazemId] = useState<string | null>(null);
-
-  const handleUpdateQuantity = async (produtoId: string, newQtyStr: string) => {
-    const newQty = Number(newQtyStr);
-    if (Number.isNaN(newQty) || newQty < 0) {
-      toast({ variant: "destructive", title: "Quantidade inválida", description: "Digite um valor maior ou igual a zero." });
-      return;
-    }
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      const { error } = await supabase
-        .from("estoque")
-        .update({ 
-          quantidade: newQty,
-          updated_at: new Date().toISOString(),
-          updated_by: userData.user?.id,
-        })
-        .eq("id", produtoId);
-
-      if (error) {
-        toast({ variant: "destructive", title: "Erro ao atualizar estoque", description: error.message });
-        return;
-      }
-
-      toast({ title: "Quantidade atualizada com sucesso!" });
-      setEditingId(null);
-      queryClient.invalidateQueries({ queryKey: ["estoque"] });
-
-    } catch (err: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Erro inesperado ao atualizar",
-        description: err instanceof Error ? err.message : String(err)
-      });
-      console.error("❌ [ERROR]", err);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <PageHeader title="Controle de Estoque" description="Carregando..." actions={<></>} />
-        <div className="container mx-auto px-6 py-8 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Carregando estoque...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-background">
-        <PageHeader title="Controle de Estoque" description="Erro ao carregar dados" actions={<></>} />
-        <div className="container mx-auto px-6 py-8 text-center">
-          <p className="text-destructive">Erro: {(error as Error).message}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const showingCount = filteredArmazens.reduce((acc, armazem) => acc + armazem.produtos.length, 0);
-  const totalCount = estoquePorArmazem.reduce((acc, armazem) => acc + armazem.produtos.length, 0);
-
-  const activeAdvancedCount =
-    (selectedStatuses.length ? 1 : 0) +
-    (selectedWarehouses.length ? 1 : 0) +
-    ((dateFrom || dateTo) ? 1 : 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -413,8 +415,8 @@ const Estoque = () => {
         actions={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button 
-                className="bg-gradient-primary" 
+              <Button
+                className="bg-gradient-primary"
                 disabled={!hasRole("logistica") && !hasRole("admin")}
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -462,14 +464,14 @@ const Estoque = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="quantidade">Quantidade a adicionar *</Label>
-                    <Input 
-                      id="quantidade" 
-                      type="number" 
-                      step="0.01" 
-                      min="0" 
+                    <Input
+                      id="quantidade"
+                      type="number"
+                      step="0.01"
+                      min="0"
                       placeholder="Ex: 20.5 (será somado ao estoque atual)"
-                      value={novoProduto.quantidade} 
-                      onChange={(e) => setNovoProduto((s) => ({ ...s, quantidade: e.target.value }))} 
+                      value={novoProduto.quantidade}
+                      onChange={(e) => setNovoProduto((s) => ({ ...s, quantidade: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-2">
@@ -493,7 +495,7 @@ const Estoque = () => {
         }
       />
 
-      {/* Barra compacta: busca, contador, toggle */}
+      {/* Barra de busca e filtros */}
       <div className="container mx-auto px-6 pt-3">
         <div className="flex items-center gap-3">
           <Input
@@ -513,21 +515,78 @@ const Estoque = () => {
         </div>
       </div>
 
-      {/* Área avançada colapsável */}
       {filtersOpen && (
         <div className="container mx-auto px-6 pt-2">
-          <div className="rounded-md border p-3 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* ...mesmo bloco de filtros avançados do original */}
+          <div className="rounded-md border p-3 space-y-2">
+            {/* Badges de produtos */}
+            <div>
+              <Label className="text-sm mb-1">Produtos</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {produtosUnicos.map((p) => (
+                  <Badge
+                    key={p}
+                    onClick={() => setSelectedProdutos((prev) =>
+                      prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
+                    )}
+                    className={`cursor-pointer text-xs px-2 py-1 ${selectedProdutos.includes(p) ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}
+                  >
+                    {p}
+                  </Badge>
+                ))}
+              </div>
             </div>
-            <div className="flex justify-end">
+            {/* Badges de armazém */}
+            <div className="mt-3">
+              <Label className="text-sm mb-1">Armazéns</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {armazensUnicos.map((a) => (
+                  <Badge
+                    key={a.id}
+                    onClick={() => setSelectedWarehouses((prev) =>
+                      prev.includes(a.id) ? prev.filter(x => x !== a.id) : [...prev, a.id]
+                    )}
+                    className={`cursor-pointer text-xs px-2 py-1 ${selectedWarehouses.includes(a.id) ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}
+                  >
+                    {a.cidade}/{a.estado} - {a.nome}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            {/* Status estoque baixo */}
+            <div className="mt-3">
+              <Label className="text-sm mb-1">Status de estoque</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {["normal", "baixo"].map((st) => {
+                  const active = selectedStatuses.includes(st as StockStatus);
+                  return (
+                    <Badge
+                      key={st}
+                      onClick={() => setSelectedStatuses((prev) => (
+                        prev.includes(st as StockStatus)
+                          ? prev.filter(s => s !== st)
+                          : [...prev, st as StockStatus]
+                      ))}
+                      className={`cursor-pointer text-xs px-2 py-1 ${active ? "bg-gradient-primary text-white" : "bg-muted text-muted-foreground"}`}
+                    >
+                      {st === "normal" ? "Normal" : "Baixo"}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Período */}
+            <div className="mt-3 flex gap-4 items-center">
+              <Label>Período</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 w-[160px]" />
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-[160px]" />
               <Button variant="ghost" size="sm" onClick={() => {
                 setSearch("");
+                setSelectedProdutos([]);
+                setSelectedWarehouses([]);
                 setSelectedStatuses([]);
                 setDateFrom("");
                 setDateTo("");
-                setSelectedWarehouses([]);
-              }} className="gap-1">
+              }}>
                 <X className="h-4 w-4" /> Limpar Filtros
               </Button>
             </div>
@@ -538,7 +597,7 @@ const Estoque = () => {
       {/* Card horizontal para armazéns + expandir + cards horizontais para produtos */}
       <div className="container mx-auto px-6 py-6 flex flex-col gap-4">
         {filteredArmazens.map((armazem) => (
-          <div key={armazem.id} className="">
+          <div key={armazem.id}>
             <Card
               className={`w-full transition-all shadow hover:shadow-md cursor-pointer flex flex-col ${openArmazemId === armazem.id ? "border-primary" : ""}`}
               onClick={() =>
@@ -603,9 +662,9 @@ const Estoque = () => {
                               </Button>
                             </div>
                           ) : (
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setEditingId(produto.id);
