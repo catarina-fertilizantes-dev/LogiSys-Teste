@@ -40,7 +40,6 @@ const Liberacoes = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Buscar cliente atual vinculado ao usuário logado (igual Agendamentos)
   const { data: currentCliente } = useQuery({
     queryKey: ["current-cliente", user?.id],
     queryFn: async () => {
@@ -56,7 +55,6 @@ const Liberacoes = () => {
     enabled: !!user && userRole === "cliente",
   });
 
-  // Buscar armazém atual vinculado ao usuário logado
   const { data: currentArmazem } = useQuery({
     queryKey: ["current-armazem", user?.id],
     queryFn: async () => {
@@ -72,7 +70,6 @@ const Liberacoes = () => {
     enabled: !!user && userRole === "armazem",
   });
 
-  // Query principal de liberações (agora com filtro por cliente ou armazem no front)
   const { data: liberacoesData, isLoading, error } = useQuery({
     queryKey: ["liberacoes", currentCliente?.id, currentArmazem?.id],
     queryFn: async () => {
@@ -93,9 +90,7 @@ const Liberacoes = () => {
           armazem:armazens(id, nome, cidade, estado)
         `)
         .order("created_at", { ascending: false });
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
       let filtered = data ?? [];
       if (userRole === "cliente" && currentCliente?.id) {
         filtered = filtered.filter((l: any) => l.cliente_id === currentCliente.id);
@@ -109,7 +104,6 @@ const Liberacoes = () => {
     enabled: (userRole !== "cliente" || !!currentCliente?.id) && (userRole !== "armazem" || !!currentArmazem?.id),
   });
 
-  // Prepara array para grid/cards
   const liberacoes = useMemo(() => {
     if (!liberacoesData) return [];
     return liberacoesData.map((item: any) => ({
@@ -127,7 +121,6 @@ const Liberacoes = () => {
     }));
   }, [liberacoesData]);
 
-  // Estados modal "Nova Liberação"
   const [dialogOpen, setDialogOpen] = useState(false);
   const [novaLiberacao, setNovaLiberacao] = useState({
     produto: "",
@@ -137,7 +130,6 @@ const Liberacoes = () => {
     quantidade: "",
   });
 
-  // Buscar produtos, armazéns e clientes para selects
   const { data: produtos } = useQuery({
     queryKey: ["produtos-list"],
     queryFn: async () => {
@@ -173,7 +165,7 @@ const Liberacoes = () => {
     },
   });
 
-  // Filtros compactos + colapsáveis
+  // Filtros avançados atualizados
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<StatusLib[]>([]);
@@ -191,7 +183,6 @@ const Liberacoes = () => {
   const toggleArmazem = (a: string) => setSelectedArmazens((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
   const clearFilters = () => { setSearch(""); setSelectedStatuses([]); setDateFrom(""); setDateTo(""); setSelectedArmazens([]); };
 
-  // Filtro dos cards
   const filteredLiberacoes = useMemo(() => {
     return liberacoes.filter((l) => {
       const term = search.trim().toLowerCase();
@@ -222,7 +213,6 @@ const Liberacoes = () => {
     setNovaLiberacao({ produto: "", armazem: "", cliente_id: "", pedido: "", quantidade: "" });
   };
 
-  // CADASTRAR nova liberação
   const handleCreateLiberacao = async () => {
     const { produto, armazem, cliente_id, pedido, quantidade } = novaLiberacao;
 
@@ -236,7 +226,6 @@ const Liberacoes = () => {
       return;
     }
 
-    // Busca nome do cliente para campo NOT NULL
     const clienteSelecionado = clientesData?.find(c => c.id === cliente_id);
     if (!clienteSelecionado) {
       toast({ variant: "destructive", title: "Cliente inválido" });
@@ -399,8 +388,6 @@ const Liberacoes = () => {
           </Dialog>
         }
       />
-
-      {/* Barra compacta */}
       <div className="container mx-auto px-6 pt-3">
         <div className="flex items-center gap-3">
           <Input className="h-9 flex-1" placeholder="Buscar por produto, cliente ou pedido..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -412,57 +399,48 @@ const Liberacoes = () => {
           </Button>
         </div>
       </div>
-
-      {/* Filtros avançados */}
       {filtersOpen && (
         <div className="container mx-auto px-6 pt-2">
-          <div className="rounded-md border p-3 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label>Status</Label>
-                <div className="flex flex-wrap gap-2">
-                  {allStatuses.map((st) => {
-                    const active = selectedStatuses.includes(st);
-                    const label = st === "pendente" ? "Pendente" : st === "parcial" ? "Parcial" : "Concluído";
+          <div className="rounded-md border p-3 space-y-6 relative">
+            <div>
+              <Label className="text-sm font-semibold mb-1">Status</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {allStatuses.map((st) => {
+                  const active = selectedStatuses.includes(st);
+                  const label = st === "pendente" ? "Pendente" : st === "parcial" ? "Parcial" : "Concluído";
+                  return (
+                    <Badge key={st} onClick={() => toggleStatus(st)} className={`cursor-pointer text-xs px-2 py-1 ${active ? "bg-gradient-primary text-white" : "bg-muted text-muted-foreground"}`}>
+                      {label}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+            {allArmazens.length > 0 && (
+              <div>
+                <Label className="text-sm font-semibold mb-1">Armazém</Label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {allArmazens.map((a) => {
+                    const active = selectedArmazens.includes(a);
                     return (
-                      <Badge key={st} onClick={() => toggleStatus(st)} className={`cursor-pointer text-xs px-2 py-1 ${active ? "bg-gradient-primary text-white" : "bg-muted text-gray-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900"}`}>
-                        {label}
+                      <Badge key={a} onClick={() => toggleArmazem(a)} className={`cursor-pointer text-xs px-2 py-1 ${active ? "bg-gradient-primary text-white" : "bg-muted text-muted-foreground"}`}>
+                        {a}
                       </Badge>
                     );
                   })}
                 </div>
               </div>
-              {allArmazens.length > 0 && (
-                <div className="space-y-1">
-                  <Label>Armazém</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {allArmazens.map((a) => {
-                      const active = selectedArmazens.includes(a);
-                      return (
-                        <Badge key={a} onClick={() => toggleArmazem(a)} className={`cursor-pointer text-xs px-2 py-1 ${active ? "bg-gradient-primary text-white" : "bg-muted text-gray-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900"}`}>
-                          {a}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label>Período</Label>
-                <div className="flex gap-2">
-                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9" />
-                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9" />
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <Button variant="ghost" size="sm" onClick={() => clearFilters()} className="gap-1"><X className="h-4 w-4" /> Limpar Filtros</Button>
+            )}
+            <div className="flex items-center gap-4">
+              <Label className="text-sm font-semibold mb-1">Período</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 w-[160px]" />
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-[160px]" />
+              <div className="flex-1"></div>
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1"><X className="h-4 w-4" /> Limpar Filtros</Button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Grid de cards */}
       <div className="container mx-auto px-6 py-6">
         <div className="grid gap-4">
           {filteredLiberacoes.map((lib) => (
@@ -470,7 +448,8 @@ const Liberacoes = () => {
               <CardContent className="p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-success">
+                    {/* badge ícone à esquerda com cor do Estoque */}
+                    <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-primary">
                       <ClipboardList className="h-5 w-5 text-white" />
                     </div>
                     <div>
@@ -484,8 +463,8 @@ const Liberacoes = () => {
                   <Badge
                     variant={
                       lib.status === "concluido" ? "default" :
-                        lib.status === "parcial" ? "secondary" :
-                          "outline"
+                      lib.status === "parcial" ? "secondary" :
+                      "outline"
                     }
                   >
                     {lib.status === "concluido" ? "Concluído" : lib.status === "parcial" ? "Parcial" : "Pendente"}
