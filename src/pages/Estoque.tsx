@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Package, X, Filter as FilterIcon, ChevronDown, ChevronUp } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 type StockStatus = "normal" | "baixo";
@@ -125,7 +125,7 @@ const Estoque = () => {
     refetchInterval: 30000,
   });
 
-  // Filtro para os armazéns em badges
+  // Filtro avançado para os armazéns em badges
   const { data: armazensParaFiltro } = useQuery({
     queryKey: ["armazens-filtro"],
     queryFn: async () => {
@@ -135,11 +135,7 @@ const Estoque = () => {
         .eq("ativo", true)
         .order("cidade");
       if (error) {
-        toast({
-          variant: "destructive",
-          title: "Erro ao buscar armazéns para filtro",
-          description: error.message,
-        });
+        toast({ variant: "destructive", title: "Erro ao buscar armazéns para filtro", description: error.message });
         return [];
       }
       return data || [];
@@ -147,13 +143,13 @@ const Estoque = () => {
     refetchInterval: 10000,
   });
 
-  // Agrupa o estoque por armazém (*apenas armazéns ativos*)
+  // Agrupa o estoque por armazém (*apenas armazéns ativos e produtos ativos*)
   const estoquePorArmazem: ArmazemEstoque[] = useMemo(() => {
     if (!estoqueData) return [];
     const map: { [armazemId: string]: ArmazemEstoque } = {};
     for (const item of estoqueData as SupabaseEstoqueItem[]) {
       if (!item.armazem || !item.armazem.id || !item.armazem.ativo) continue;
-      if (!item.produto || !item.produto.ativo) continue; // Só produto ativo!
+      if (!item.produto || !item.produto.ativo) continue; // Só produtos ativos!
       const armazemId = item.armazem.id;
       if (!map[armazemId]) {
         map[armazemId] = {
@@ -218,9 +214,7 @@ const Estoque = () => {
   const filteredArmazens = useMemo(() => {
     return estoquePorArmazem
       .filter((armazem) => {
-        // Filtro por badges de armazém
         if (selectedWarehouses.length > 0 && !selectedWarehouses.includes(armazem.id)) return false;
-        // Busca textual: armazém ou produto
         if (search.trim()) {
           const term = search.trim().toLowerCase();
           if (
@@ -233,7 +227,6 @@ const Estoque = () => {
             return false;
           }
         }
-        // Badge de produto: só armazéns que possuem ao menos um produto selecionado
         if (selectedProdutos.length > 0) {
           return armazem.produtos.some((prod) => selectedProdutos.includes(prod.produto));
         }
@@ -241,11 +234,9 @@ const Estoque = () => {
       })
       .map((armazem) => {
         let produtos = armazem.produtos;
-        // Filtro de status
         if (selectedStatuses.length > 0) {
           produtos = produtos.filter((p) => selectedStatuses.includes(p.status));
         }
-        // Período
         if (dateFrom) {
           const from = new Date(dateFrom);
           produtos = produtos.filter((p) => parseDate(p.data) >= from);
@@ -255,7 +246,6 @@ const Estoque = () => {
           to.setHours(23, 59, 59, 999);
           produtos = produtos.filter((p) => parseDate(p.data) <= to);
         }
-        // Busca textual dentro dos produtos
         if (search.trim()) {
           const term = search.trim().toLowerCase();
           produtos = produtos.filter(
@@ -264,7 +254,6 @@ const Estoque = () => {
               armazem.cidade.toLowerCase().includes(term)
           );
         }
-        // Badge selecionada de produto
         if (selectedProdutos.length > 0) {
           produtos = produtos.filter(prod => selectedProdutos.includes(prod.produto));
         }
@@ -297,7 +286,6 @@ const Estoque = () => {
       toast({ title: "Quantidade atualizada com sucesso!" });
       setEditingId(null);
       queryClient.invalidateQueries({ queryKey: ["estoque"] });
-
     } catch (err: unknown) {
       toast({
         variant: "destructive",
@@ -317,7 +305,6 @@ const Estoque = () => {
     (selectedStatuses.length ? 1 : 0) +
     ((dateFrom || dateTo) ? 1 : 0);
 
-  // Modal de entrada de estoque
   const [dialogOpen, setDialogOpen] = useState(false);
   const [novoProduto, setNovoProduto] = useState({
     produtoId: "",
@@ -499,7 +486,6 @@ const Estoque = () => {
           </Dialog>
         }
       />
-
       {/* Barra de busca e filtros */}
       <div className="container mx-auto px-6 pt-3">
         <div className="flex items-center gap-3">
@@ -522,7 +508,7 @@ const Estoque = () => {
 
       {filtersOpen && (
         <div className="container mx-auto px-6 pt-2">
-          <div className="rounded-md border p-3 space-y-2">
+          <div className="rounded-md border p-3 space-y-2 relative">
             {/* Badges de produtos */}
             <div>
               <Label className="text-sm mb-1">Produtos</Label>
@@ -584,6 +570,9 @@ const Estoque = () => {
               <Label>Período</Label>
               <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 w-[160px]" />
               <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-[160px]" />
+            </div>
+            {/* Botão "Limpar Filtros" alinhado à direita no rodapé da caixa de filtros */}
+            <div className="flex justify-end mt-4 absolute right-4 bottom-4">
               <Button variant="ghost" size="sm" onClick={() => {
                 setSearch("");
                 setSelectedProdutos([]);
@@ -621,13 +610,16 @@ const Estoque = () => {
                     <div className="text-xs text-muted-foreground">Capacidade: {armazem.capacidade_total}t</div>
                   )}
                 </div>
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-3 items-center">
+                  {/* Badge/ícone à direita do card, igual ao card de agendamentos */}
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-primary">
+                    <Package className="h-5 w-5 text-white" />
+                  </div>
                   <Button variant="ghost" size="icon" tabIndex={-1} className="pointer-events-none">
                     {openArmazemId === armazem.id ? <ChevronUp /> : <ChevronDown />}
                   </Button>
                 </div>
               </CardContent>
-              {/* Produtos horizontal abaixo */}
               {openArmazemId === armazem.id && (
                 <div className="border-t py-3 px-5 bg-muted/50 flex flex-col gap-3">
                   {armazem.produtos.length > 0 ? (
