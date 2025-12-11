@@ -24,6 +24,7 @@ interface ProdutoEstoque {
   status: StockStatus;
   data: string;
   produto_id?: string;
+  ativo?: boolean;
 }
 
 interface ArmazemEstoque {
@@ -44,6 +45,7 @@ interface SupabaseEstoqueItem {
     id: string;
     nome: string;
     unidade: string;
+    ativo?: boolean;
   } | null;
   armazem: {
     id: string;
@@ -75,7 +77,7 @@ const Estoque = () => {
           id,
           quantidade,
           updated_at,
-          produto:produtos(id, nome, unidade),
+          produto:produtos(id, nome, unidade, ativo),
           armazem:armazens(id, nome, cidade, estado, capacidade_total, ativo)
         `)
         .order("updated_at", { ascending: false });
@@ -94,7 +96,7 @@ const Estoque = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("produtos")
-        .select("id, nome, unidade")
+        .select("id, nome, unidade, ativo")
         .order("nome");
       if (error) {
         toast({ variant: "destructive", title: "Erro ao buscar produtos", description: error.message });
@@ -123,7 +125,7 @@ const Estoque = () => {
     refetchInterval: 30000,
   });
 
-  // Filtro avançado/facil para busca e grid
+  // Filtro para os armazéns em badges
   const { data: armazensParaFiltro } = useQuery({
     queryKey: ["armazens-filtro"],
     queryFn: async () => {
@@ -145,12 +147,13 @@ const Estoque = () => {
     refetchInterval: 10000,
   });
 
-  // Agrupa o estoque por armazém
+  // Agrupa o estoque por armazém (*apenas armazéns ativos*)
   const estoquePorArmazem: ArmazemEstoque[] = useMemo(() => {
     if (!estoqueData) return [];
     const map: { [armazemId: string]: ArmazemEstoque } = {};
     for (const item of estoqueData as SupabaseEstoqueItem[]) {
       if (!item.armazem || !item.armazem.id || !item.armazem.ativo) continue;
+      if (!item.produto || !item.produto.ativo) continue; // Só produto ativo!
       const armazemId = item.armazem.id;
       if (!map[armazemId]) {
         map[armazemId] = {
@@ -171,15 +174,16 @@ const Estoque = () => {
         status: item.quantidade < 10 ? "baixo" : "normal",
         data: new Date(item.updated_at).toLocaleDateString("pt-BR"),
         produto_id: item.produto?.id,
+        ativo: item.produto?.ativo,
       });
     }
     return Object.values(map).sort((a, b) => {
-      if (a.cidade === b.cidade) return a.nome.localeCompare(b.nome);
-      return a.cidade.localeCompare(b.cidade);
+      if (a.nome === b.nome) return a.cidade.localeCompare(b.cidade);
+      return a.nome.localeCompare(b.nome);
     });
   }, [estoqueData]);
 
-  // Construir lista de produtos únicos para badges
+  // Produtos únicos para badges
   const produtosUnicos = useMemo(() => {
     const set = new Set<string>();
     estoquePorArmazem.forEach(armazem =>
@@ -188,7 +192,7 @@ const Estoque = () => {
     return Array.from(set).sort();
   }, [estoquePorArmazem]);
 
-  // Construir lista de armazéns únicos para badges
+  // Armazéns únicos para badges
   const armazensUnicos = useMemo(() => {
     return estoquePorArmazem.map(a => ({
       id: a.id,
@@ -211,7 +215,6 @@ const Estoque = () => {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  // Filtro final dos armazéns + produtos.
   const filteredArmazens = useMemo(() => {
     return estoquePorArmazem
       .filter((armazem) => {
@@ -224,7 +227,7 @@ const Estoque = () => {
             !(
               armazem.nome.toLowerCase().includes(term) ||
               armazem.cidade.toLowerCase().includes(term) ||
-              (armazem.produtos.some(prod => prod.produto.toLowerCase().includes(term)))
+              armazem.produtos.some(prod => prod.produto.toLowerCase().includes(term))
             )
           ) {
             return false;
@@ -238,7 +241,7 @@ const Estoque = () => {
       })
       .map((armazem) => {
         let produtos = armazem.produtos;
-        // Filtro de status do produto
+        // Filtro de status
         if (selectedStatuses.length > 0) {
           produtos = produtos.filter((p) => selectedStatuses.includes(p.status));
         }
@@ -252,7 +255,7 @@ const Estoque = () => {
           to.setHours(23, 59, 59, 999);
           produtos = produtos.filter((p) => parseDate(p.data) <= to);
         }
-        // Filtro textual aplicado aos produtos
+        // Busca textual dentro dos produtos
         if (search.trim()) {
           const term = search.trim().toLowerCase();
           produtos = produtos.filter(
@@ -337,9 +340,9 @@ const Estoque = () => {
       toast({ variant: "destructive", title: "Quantidade inválida", description: "Informe um valor maior que zero." });
       return;
     }
-    const produtoSelecionado = produtosCadastrados?.find(p => p.id === produtoId);
+    const produtoSelecionado = produtosCadastrados?.find(p => p.id === produtoId && p.ativo);
     if (!produtoSelecionado) {
-      toast({ variant: "destructive", title: "Produto não encontrado", description: "Selecione um produto existente." });
+      toast({ variant: "destructive", title: "Produto não encontrado ou inativo", description: "Selecione um produto ativo." });
       return;
     }
     const { data: armazemData, error: errArmazem } = await supabase
@@ -353,7 +356,7 @@ const Estoque = () => {
       return;
     }
     if (!armazemData?.id) {
-      toast({ variant: "destructive", title: "Armazém não encontrado ou inativo", description: "Selecione um armazém válido." });
+      toast({ variant: "destructive", title: "Armazém não encontrado ou inativo", description: "Selecione um armazém ativo válido." });
       return;
     }
     const { data: estoqueAtual, error: errBuscaEstoque } = await supabase
@@ -435,10 +438,12 @@ const Estoque = () => {
                     onValueChange={id => setNovoProduto(s => ({ ...s, produtoId: id }))}
                   >
                     <SelectTrigger id="produto">
-                      <SelectValue placeholder="Selecione o produto" />
+                      <SelectValue placeholder="Selecione o produto ativo" />
                     </SelectTrigger>
                     <SelectContent>
-                      {produtosCadastrados?.map((p) => (
+                      {produtosCadastrados
+                        ?.filter((p) => p.ativo)
+                        .map((p) => (
                         <SelectItem key={p.id} value={p.id}>
                           {p.nome} ({p.unidade})
                         </SelectItem>
@@ -450,12 +455,12 @@ const Estoque = () => {
                   <Label htmlFor="armazem">Armazém *</Label>
                   <Select value={novoProduto.armazem} onValueChange={(v) => setNovoProduto((s) => ({ ...s, armazem: v }))}>
                     <SelectTrigger id="armazem">
-                      <SelectValue placeholder="Selecione o armazém" />
+                      <SelectValue placeholder="Selecione o armazém ativo" />
                     </SelectTrigger>
                     <SelectContent>
                       {armazensAtivos?.map((a) => (
                         <SelectItem key={a.id} value={a.id}>
-                          {a.cidade}/{a.estado} - {a.nome}
+                          {a.nome} — {a.cidade}{a.estado ? `/${a.estado}` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -547,7 +552,7 @@ const Estoque = () => {
                     )}
                     className={`cursor-pointer text-xs px-2 py-1 ${selectedWarehouses.includes(a.id) ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}
                   >
-                    {a.cidade}/{a.estado} - {a.nome}
+                    {a.nome} — {a.cidade}{a.estado ? `/${a.estado}` : ""}
                   </Badge>
                 ))}
               </div>
@@ -594,7 +599,6 @@ const Estoque = () => {
         </div>
       )}
 
-      {/* Card horizontal para armazéns + expandir + cards horizontais para produtos */}
       <div className="container mx-auto px-6 py-6 flex flex-col gap-4">
         {filteredArmazens.map((armazem) => (
           <div key={armazem.id}>
@@ -608,7 +612,7 @@ const Estoque = () => {
                 <div>
                   <h3 className="font-semibold text-lg">{armazem.nome}</h3>
                   <p className="text-xs text-muted-foreground">
-                    {armazem.cidade}/{armazem.estado}
+                    {armazem.cidade}{armazem.estado ? `/${armazem.estado}` : ""}
                   </p>
                   <span className="text-xs text-muted-foreground">
                     {armazem.produtos.length} produto{armazem.produtos.length !== 1 && 's'} atualmente
@@ -618,9 +622,6 @@ const Estoque = () => {
                   )}
                 </div>
                 <div className="flex gap-2 items-center">
-                  <Badge variant={armazem.ativo ? "default" : "secondary"}>
-                    {armazem.ativo ? "Ativo" : "Inativo"}
-                  </Badge>
                   <Button variant="ghost" size="icon" tabIndex={-1} className="pointer-events-none">
                     {openArmazemId === armazem.id ? <ChevronUp /> : <ChevronDown />}
                   </Button>
@@ -681,7 +682,7 @@ const Estoque = () => {
                     ))
                   ) : (
                     <div className="text-center text-xs text-muted-foreground py-6">
-                      Nenhum produto cadastrado neste armazém
+                      Nenhum produto ativo cadastrado neste armazém
                     </div>
                   )}
                 </div>
