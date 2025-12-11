@@ -431,9 +431,142 @@ const Agendamentos = () => {
                 <DialogTitle>Novo Agendamento</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
-                {/* ...modal igual ao fornecido antes... */}
-                {/* Garantido funcionamento do modal de inclusão */}
-                {/* ...todo conteúdo preservado... */}
+                <div className="space-y-2">
+                  <Label htmlFor="liberacao">Liberação *</Label>
+                  <Select
+                    value={novoAgendamento.liberacao}
+                    onValueChange={(v) => {
+                      setNovoAgendamento((s) => ({ ...s, liberacao: v }));
+                      const lib = liberacoesPendentes?.find((l) => l.id === v);
+                      if (lib) {
+                        const disponivel = lib.quantidade_liberada - lib.quantidade_retirada;
+                        setNovoAgendamento((s) => ({ ...s, quantidade: disponivel.toString() }));
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="liberacao">
+                      <SelectValue placeholder="Selecione a liberação" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {liberacoesPendentes?.map((lib: any) => {
+                        const disponivel = lib.quantidade_liberada - lib.quantidade_retirada;
+                        return (
+                          <SelectItem key={lib.id} value={lib.id}>
+                            {lib.pedido_interno} - {lib.clientes?.nome} - {lib.produto?.nome} ({disponivel}t disponível) - {lib.armazem?.cidade}/{lib.armazem?.estado}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="quantidade">Quantidade (t) *</Label>
+                  <Input
+                    id="quantidade"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={novoAgendamento.quantidade}
+                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, quantidade: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="data">Data *</Label>
+                    <Input
+                      id="data"
+                      type="date"
+                      value={novoAgendamento.data}
+                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, data: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="horario">Horário *</Label>
+                    <Input
+                      id="horario"
+                      type="time"
+                      value={novoAgendamento.horario}
+                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, horario: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="placa">Placa do Veículo *</Label>
+                  <Input
+                    id="placa"
+                    value={novoAgendamento.placa}
+                    onChange={(e) =>
+                      setNovoAgendamento((s) => ({
+                        ...s,
+                        placa: maskPlaca(e.target.value),
+                      }))
+                    }
+                    placeholder="Ex: ABC-1234 ou ABC-1D23"
+                    maxLength={9}
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    inputMode="text"
+                  />
+                  <p className="text-xs text-muted-foreground">Formato antigo (ABC-1234) ou Mercosul (ABC-1D23)</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="motorista">Nome do Motorista *</Label>
+                    <Input
+                      id="motorista"
+                      value={novoAgendamento.motorista}
+                      onChange={(e) => setNovoAgendamento((s) => ({ ...s, motorista: e.target.value }))}
+                      placeholder="Ex: João Silva"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="documento">Documento (CPF) *</Label>
+                    <Input
+                      id="documento"
+                      value={novoAgendamento.documento}
+                      onChange={(e) =>
+                        setNovoAgendamento((s) => ({
+                          ...s,
+                          documento: maskCPF(e.target.value),
+                        }))
+                      }
+                      placeholder="Ex: 123.456.789-00"
+                      maxLength={14}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="tipoCaminhao">Tipo de Caminhão</Label>
+                  <Input
+                    id="tipoCaminhao"
+                    value={novoAgendamento.tipoCaminhao}
+                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, tipoCaminhao: e.target.value }))}
+                    placeholder="Ex: Bitrem, Carreta, Truck"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="observacoes">Observações</Label>
+                  <Input
+                    id="observacoes"
+                    value={novoAgendamento.observacoes}
+                    onChange={(e) => setNovoAgendamento((s) => ({ ...s, observacoes: e.target.value }))}
+                    placeholder="Informações adicionais sobre o agendamento"
+                  />
+                </div>
+                {formError && (
+                  <div className="pt-3 text-destructive text-sm font-semibold border-t">
+                    {formError}
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
