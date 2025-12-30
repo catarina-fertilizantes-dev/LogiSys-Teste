@@ -8,7 +8,6 @@ import {
   Warehouse,
   Users,
   LogOut,
-  Settings,
   BadgeCheck,
   Tag,
 } from "lucide-react";
@@ -23,7 +22,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 
@@ -33,12 +31,6 @@ const upperMenuItems = [
     url: "/",
     icon: LayoutDashboard,
     resource: null,
-  },
-  {
-    title: "Estoque",
-    url: "/estoque",
-    icon: Package,
-    resource: "estoque" as const,
   },
   {
     title: "Liberações",
@@ -62,10 +54,11 @@ const upperMenuItems = [
 
 const lowerMenuItems = [
   {
-    title: "Produtos",
-    url: "/produtos",
-    icon: Tag,
-    resource: "produtos" as const,
+    title: "Colaboradores",
+    url: "/colaboradores",
+    icon: BadgeCheck,
+    resource: "colaboradores" as const,
+    requiresRole: ["admin"] as const,
   },
   {
     title: "Clientes",
@@ -80,16 +73,21 @@ const lowerMenuItems = [
     resource: "armazens" as const,
   },
   {
-    title: "Colaboradores",
-    url: "/colaboradores",
-    icon: BadgeCheck,
-    resource: "colaboradores" as const,
-    requiresRole: ["admin"] as const,
+    title: "Produtos",
+    url: "/produtos",
+    icon: Tag,
+    resource: "produtos" as const,
+  },
+  {
+    title: "Estoque",
+    url: "/estoque",
+    icon: Package,
+    resource: "estoque" as const,
   },
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
+  const { state, setOpenMobile, isMobile } = useSidebar();
   const { signOut, userRole } = useAuth();
   const { canAccess, loading: permissionsLoading } = usePermissions();
   const isCollapsed = state === "collapsed";
@@ -98,9 +96,15 @@ export function AppSidebar() {
     await signOut();
   };
 
+  // Fechar sidebar mobile ao clicar em um item
+  const handleItemClick = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
+
   const filterMenuItems = (items: typeof upperMenuItems | typeof lowerMenuItems) => {
     return items.filter(item => {
-      // Check role-based requirements (Colaboradores only for admin)
       if ('requiresRole' in item && item.requiresRole) {
         const hasRequiredRole = userRole ? item.requiresRole.includes(userRole) : false;
         if (!hasRequiredRole) {
@@ -110,7 +114,6 @@ export function AppSidebar() {
       if (!item.resource) {
         return true;
       }
-      // 🚩 admin e logistica SEMPRE podem ver o menu Clientes
       if (
         item.resource === "clientes" &&
         (userRole === "admin" || userRole === "logistica")
@@ -122,7 +125,6 @@ export function AppSidebar() {
     });
   };
 
-  // Wait for permissions to load before filtering menu
   const visibleUpperMenuItems = permissionsLoading
     ? [upperMenuItems[0]]
     : filterMenuItems(upperMenuItems);
@@ -131,25 +133,15 @@ export function AppSidebar() {
     ? []
     : filterMenuItems(lowerMenuItems);
 
-  // 🚩 NOVO: Só mostra seção Cadastros para admin ou logistica
   const showCadastros =
     userRole === "admin" || userRole === "logistica";
 
   return (
-    <Sidebar collapsible="icon">
-      <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
-        {!isCollapsed && (
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-primary flex items-center justify-center">
-              <Package className="h-5 w-5 text-white" />
-            </div>
-            <span className="font-bold text-sidebar-foreground">LogisticPro</span>
-          </div>
-        )}
-        <SidebarTrigger />
-      </div>
-
-      <SidebarContent>
+    <Sidebar 
+      collapsible="icon"
+      className="top-14" // Posiciona abaixo da barra fixa
+    >
+      <SidebarContent className="pt-2 px-1">
         <SidebarGroup>
           <SidebarGroupLabel>Menu Principal</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -165,6 +157,7 @@ export function AppSidebar() {
                           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           : "hover:bg-sidebar-accent/50"
                       }
+                      onClick={handleItemClick}
                     >
                       <item.icon className="h-4 w-4" />
                       {!isCollapsed && <span>{item.title}</span>}
@@ -192,6 +185,7 @@ export function AppSidebar() {
                             ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                             : "hover:bg-sidebar-accent/50"
                         }
+                        onClick={handleItemClick}
                       >
                         <item.icon className="h-4 w-4" />
                         {!isCollapsed && <span>{item.title}</span>}

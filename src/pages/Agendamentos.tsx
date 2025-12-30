@@ -17,7 +17,6 @@ import { useToast } from "@/hooks/use-toast";
 function maskPlaca(value: string): string {
   let up = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (up.length > 7) up = up.slice(0, 7);
-
   if (up.length === 7) {
     if (/[A-Z]{3}[0-9][A-Z][0-9]{2}/.test(up)) {
       return up.replace(/^([A-Z]{3})([0-9][A-Z][0-9]{2})$/, "$1-$2");
@@ -110,11 +109,11 @@ const Agendamentos = () => {
     enabled: !!user && userRole === "armazem",
   });
 
-  // Buscar agendamentos do banco
+  // Buscar agendamentos do banco - FILTRO NA QUERY!
   const { data: agendamentosData, isLoading, error } = useQuery({
     queryKey: ["agendamentos", currentCliente?.id, currentArmazem?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("agendamentos")
         .select(`
           id,
@@ -139,19 +138,16 @@ const Agendamentos = () => {
           )
         `)
         .order("created_at", { ascending: false });
-      if (error) throw error;
-      let filteredData = data || [];
+
       if (userRole === "cliente" && currentCliente?.id) {
-        filteredData = filteredData.filter((ag: any) =>
-          ag.liberacao?.cliente_id === currentCliente.id
-        );
+        query = query.eq("cliente_id", currentCliente.id);
       }
       if (userRole === "armazem" && currentArmazem?.id) {
-        filteredData = filteredData.filter((ag: any) =>
-          ag.liberacao?.armazem?.id === currentArmazem.id
-        );
+        query = query.eq("armazem_id", currentArmazem.id);
       }
-      return filteredData;
+      const { data, error } = await query;
+      if (error) throw error;
+      return data ?? [];
     },
     refetchInterval: 30000,
     enabled: (userRole !== "cliente" || !!currentCliente?.id) && (userRole !== "armazem" || !!currentArmazem?.id),
@@ -192,10 +188,9 @@ const Agendamentos = () => {
       documento: item.motorista_documento || "N/A",
       pedido: item.liberacao?.pedido_interno || "N/A",
       status: item.status as AgendamentoStatus,
-      armazem:
-        item.liberacao?.armazem?.cidade ||
-        item.liberacao?.armazem?.estado ||
-        "",
+      armazem: item.liberacao?.armazem
+        ? `${item.liberacao.armazem.cidade}/${item.liberacao.armazem.estado} - ${item.liberacao.armazem.nome}`
+        : "N/A",
       produto_id: item.liberacao?.produto?.id,
       armazem_id: item.liberacao?.armazem?.id,
       liberacao_id: item.liberacao?.id,
@@ -230,7 +225,7 @@ const Agendamentos = () => {
           cliente_id,
           clientes(nome),
           produto:produtos(nome),
-          armazem:armazens(cidade, estado)
+          armazem:armazens(id, cidade, estado, nome)
         `)
         .in("status", ["pendente", "parcial"])
         .order("created_at", { ascending: false });
@@ -260,6 +255,7 @@ const Agendamentos = () => {
     setFormError("");
   };
 
+  // >>> FUNÇÃO CORRIGIDA: REMOVIDO status <<<
   const handleCreateAgendamento = async () => {
     setFormError("");
     const erros = validateAgendamento(novoAgendamento);
@@ -282,6 +278,11 @@ const Agendamentos = () => {
       const placaSemMascara = (novoAgendamento.placa ?? "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
       const cpfSemMascara = (novoAgendamento.documento ?? "").replace(/\D/g, "");
 
+      // 🟢 Pegue o cliente_id e armazem_id da liberação selecionada!
+      const selectedLiberacao = liberacoesPendentes?.find((l) => l.id === novoAgendamento.liberacao);
+      const clienteIdDaLiberacao = selectedLiberacao?.cliente_id || null;
+      const armazemIdDaLiberacao = selectedLiberacao?.armazem?.id || null;
+
       const { data: userData } = await supabase.auth.getUser();
       const { data: agendData, error: errAgend } = await supabase
         .from("agendamentos")
@@ -295,8 +296,10 @@ const Agendamentos = () => {
           motorista_documento: cpfSemMascara,
           tipo_caminhao: novoAgendamento.tipoCaminhao || null,
           observacoes: novoAgendamento.observacoes || null,
-          status: "confirmado",
+          // REMOVIDO: status: "confirmado",
           created_by: userData.user?.id,
+          cliente_id: clienteIdDaLiberacao,
+          armazem_id: armazemIdDaLiberacao,
         })
         .select(`
           id,
@@ -392,9 +395,9 @@ const Agendamentos = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <PageHeader title="Agendamentos de Retirada" description="Carregando..." actions={<></>} />
-        <div className="container mx-auto px-6 py-8 text-center">
+      <div className="min-h-screen bg-background p-6 space-y-6">
+        <PageHeader title="Agendamentos de Retirada" subtitle="Carregando..." icon={Calendar} actions={<></>} />
+        <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-muted-foreground">Carregando agendamentos...</p>
         </div>
@@ -404,9 +407,9 @@ const Agendamentos = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-background">
-        <PageHeader title="Agendamentos de Retirada" description="Erro ao carregar dados" actions={<></>} />
-        <div className="container mx-auto px-6 py-8 text-center">
+      <div className="min-h-screen bg-background p-6 space-y-6">
+        <PageHeader title="Agendamentos de Retirada" subtitle="Erro ao carregar dados" icon={Calendar} actions={<></>} />
+        <div className="text-center">
           <p className="text-destructive">Erro: {(error as Error).message}</p>
         </div>
       </div>
@@ -414,10 +417,11 @@ const Agendamentos = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background p-6 space-y-6">
       <PageHeader
         title="Agendamentos de Retirada"
-        description="Gerencie os agendamentos de retirada de produtos"
+        subtitle="Gerencie os agendamentos de retirada de produtos"
+        icon={Calendar}
         actions={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -426,7 +430,7 @@ const Agendamentos = () => {
                 Novo Agendamento
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent>
               <DialogHeader>
                 <DialogTitle>Novo Agendamento</DialogTitle>
               </DialogHeader>
@@ -577,98 +581,92 @@ const Agendamentos = () => {
         }
       />
 
-      <div className="container mx-auto px-6 pt-3">
-        <div className="flex items-center gap-3">
-          <Input className="h-9 flex-1" placeholder="Buscar por cliente, produto, pedido ou motorista..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          <span className="text-xs text-muted-foreground whitespace-nowrap">Mostrando <span className="font-medium">{showingCount}</span> de <span className="font-medium">{totalCount}</span></span>
-          <Button variant="outline" size="sm" onClick={() => setFiltersOpen((v) => !v)}>
-            <FilterIcon className="h-4 w-4 mr-1" />
-            Filtros {activeAdvancedCount ? `(${activeAdvancedCount})` : ""}
-            {filtersOpen ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />}
-          </Button>
-        </div>
+      <div className="flex items-center gap-3">
+        <Input className="h-9 flex-1" placeholder="Buscar por cliente, produto, pedido ou motorista..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <span className="text-xs text-muted-foreground whitespace-nowrap">Mostrando <span className="font-medium">{showingCount}</span> de <span className="font-medium">{totalCount}</span></span>
+        <Button variant="outline" size="sm" onClick={() => setFiltersOpen((v) => !v)}>
+          <FilterIcon className="h-4 w-4 mr-1" />
+          Filtros {activeAdvancedCount ? `(${activeAdvancedCount})` : ""}
+          {filtersOpen ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />}
+        </Button>
       </div>
-
+      
       {filtersOpen && (
-        <div className="container mx-auto px-6 pt-2">
-          <div className="rounded-md border p-3 space-y-6 relative">
-            <div>
-              <Label className="text-sm font-semibold mb-1">Status</Label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {allStatuses.map((st) => {
-                  const active = selectedStatuses.includes(st);
-                  const label = st === "pendente"
-                    ? "Pendente"
-                    : st === "confirmado"
+        <div className="rounded-md border p-3 space-y-6 relative">
+          <div>
+            <Label className="text-sm font-semibold mb-1">Status</Label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {allStatuses.map((st) => {
+                const active = selectedStatuses.includes(st);
+                const label = st === "pendente"
+                  ? "Pendente"
+                  : st === "confirmado"
                     ? "Confirmado"
                     : st === "concluido"
-                    ? "Concluído"
-                    : "Cancelado";
-                  return (
-                    <Badge key={st} onClick={() => toggleStatus(st)}
-                      className={`cursor-pointer text-xs px-2 py-1 ${active ? "bg-gradient-primary text-white" : "bg-muted text-muted-foreground"}`}>
-                      {label}
-                    </Badge>
-                  );
-                })}
-              </div>
+                      ? "Concluído"
+                      : "Cancelado";
+                return (
+                  <Badge key={st} onClick={() => toggleStatus(st)}
+                    className={`cursor-pointer text-xs px-2 py-1 ${active ? "bg-gradient-primary text-white" : "bg-muted text-muted-foreground"}`}>
+                    {label}
+                  </Badge>
+                );
+              })}
             </div>
-            <div className="flex flex-col md:flex-row md:items-center gap-2 mt-3">
-              <div className="flex items-center gap-3 flex-1">
-                <Label className="text-sm font-semibold">Período</Label>
-                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 w-[160px]" />
-                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-[160px]" />
-              </div>
-              <div className="flex flex-1 justify-end">
-                <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1"><X className="h-4 w-4" /> Limpar Filtros</Button>
-              </div>
+          </div>
+          <div className="flex flex-col md:flex-row md:items-center gap-2 mt-3">
+            <div className="flex items-center gap-3 flex-1">
+              <Label className="text-sm font-semibold">Período</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 w-[160px]" />
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-[160px]" />
+            </div>
+            <div className="flex flex-1 justify-end">
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1"><X className="h-4 w-4" /> Limpar Filtros</Button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="container mx-auto px-6 py-6">
-        <div className="grid gap-4">
-          {filteredAgendamentos.map((ag) => (
-            <Card key={ag.id} className="transition-all hover:shadow-md">
-              <CardContent className="p-5">
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-primary">
-                        <Calendar className="h-5 w-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-foreground">{ag.cliente}</h3>
-                        <p className="text-sm text-muted-foreground">{ag.produto} - {ag.quantidade}t • {ag.armazem}</p>
-                        <p className="text-xs text-muted-foreground">Pedido: <span className="font-medium text-foreground">{ag.pedido}</span></p>
-                        <p className="text-xs text-muted-foreground">Data: {ag.data} • {ag.horario}</p>
-                      </div>
+      <div className="grid gap-4">
+        {filteredAgendamentos.map((ag) => (
+          <Card key={ag.id} className="transition-all hover:shadow-md">
+            <CardContent className="p-5">
+              <div className="space-y-2">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-primary">
+                      <Calendar className="h-5 w-5 text-white" />
                     </div>
-                    <Badge
-                      variant={
-                        ag.status === "confirmado" ? "default" :
-                        ag.status === "pendente"  ? "secondary" :
-                        ag.status === "concluido" ? "default" : "destructive"
-                      }
-                    >
-                      {ag.status === "confirmado" ? "Confirmado" : ag.status === "pendente" ? "Pendente" : ag.status === "concluido" ? "Concluído" : "Cancelado"}
-                    </Badge>
+                    <div>
+                      <h3 className="font-semibold text-foreground">{ag.cliente}</h3>
+                      <p className="text-sm text-muted-foreground">{ag.produto} - {ag.quantidade}t • {ag.armazem}</p>
+                      <p className="text-xs text-muted-foreground">Pedido: <span className="font-medium text-foreground">{ag.pedido}</span></p>
+                      <p className="text-xs text-muted-foreground">Data: {ag.data} • {ag.horario}</p>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm pt-2">
-                    <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-muted-foreground" /><span>{ag.data} às {ag.horario}</span></div>
-                    <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-muted-foreground" /><span>{formatPlaca(ag.placa)}</span></div>
-                    <div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" /><span>{ag.motorista}</span></div>
-                    <div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" /><span>{formatCPF(ag.documento)}</span></div>
-                  </div>
+                  <Badge
+                    variant={
+                      ag.status === "confirmado" ? "default" :
+                        ag.status === "pendente" ? "secondary" :
+                          ag.status === "concluido" ? "default" : "destructive"
+                    }
+                  >
+                    {ag.status === "confirmado" ? "Confirmado" : ag.status === "pendente" ? "Pendente" : ag.status === "concluido" ? "Concluído" : "Cancelado"}
+                  </Badge>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-          {filteredAgendamentos.length === 0 && (
-            <div className="text-sm text-muted-foreground text-center py-8">Nenhum agendamento encontrado.</div>
-          )}
-        </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm pt-2">
+                  <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-muted-foreground" /><span>{ag.data} às {ag.horario}</span></div>
+                  <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-muted-foreground" /><span>{formatPlaca(ag.placa)}</span></div>
+                  <div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" /><span>{ag.motorista}</span></div>
+                  <div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" /><span>{formatCPF(ag.documento)}</span></div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        {filteredAgendamentos.length === 0 && (
+          <div className="text-sm text-muted-foreground text-center py-8">Nenhum agendamento encontrado.</div>
+        )}
       </div>
     </div>
   );

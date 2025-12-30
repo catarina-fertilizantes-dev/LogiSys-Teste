@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Users, UserPlus, Shield } from "lucide-react";
+import { Users, UserPlus, Shield, BadgeCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -78,7 +78,7 @@ const Colaboradores = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data: usersData, error: rpcError } = await supabase. rpc(USERS_FUNCTION) as { data: RpcUserData[] | null; error: Error | null };
+      const { data: usersData, error: rpcError } = await supabase.rpc(USERS_FUNCTION) as { data: RpcUserData[] | null; error: Error | null };
       if (rpcError) {
         setError(rpcError.message);
         toast({ 
@@ -337,10 +337,12 @@ const handleCreateUser = async () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    // Aplicando p-6 space-y-6 na div principal, assim como na página Clientes
+    <div className="min-h-screen bg-background p-6 space-y-6"> 
       <PageHeader
         title="Colaboradores"
-        description="Gerencie colaboradores do sistema (Admin e Logística).  Roles exibidas são provenientes de user_roles."
+        subtitle="Gerencie colaboradores do sistema (Admin e Logística)"
+        icon={BadgeCheck}
         actions={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -362,7 +364,7 @@ const handleCreateUser = async () => {
                   <Input
                     id="nome"
                     value={newUserNome}
-                    onChange={(e) => setNewUserNome(e.target. value)}
+                    onChange={(e) => setNewUserNome(e.target.value)}
                     placeholder="Nome do usuário"
                   />
                 </div>
@@ -372,7 +374,7 @@ const handleCreateUser = async () => {
                     id="email"
                     type="email"
                     value={newUserEmail}
-                    onChange={(e) => setNewUserEmail(e. target.value)}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
                     placeholder="email@exemplo.com"
                   />
                 </div>
@@ -418,86 +420,85 @@ const handleCreateUser = async () => {
         }
       />
 
-      <div className="container mx-auto px-6 py-8">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Usuários do Sistema
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                <p className="mt-2 text-muted-foreground">Carregando colaboradores...</p>
-              </div>
-            ) : error ? (
-              <div className="text-center py-8">
-                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-6 max-w-md mx-auto">
-                  <Shield className="h-12 w-12 mx-auto mb-4 text-destructive" />
-                  <h3 className="text-lg font-semibold mb-2 text-destructive">Erro ao Carregar Colaboradores</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Não foi possível carregar a lista de colaboradores. Verifique se a função get_users_with_roles foi atualizada para não usar a tabela profiles.
-                  </p>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Execute a migration: <code className="bg-muted px-2 py-1 rounded">20251120_update_get_users_function.sql</code>
-                  </p>
-                  <Button onClick={fetchUsers} variant="outline">
-                    Tentar Novamente
-                  </Button>
-                </div>
-              </div>
-            ) : users.length === 0 ? (
-              <div className="text-center py-8">
-                <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">Nenhum colaborador encontrado.</p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Apenas usuários com role "admin" ou "logistica" são exibidos aqui.
+      {/* Removido o div 'container mx-auto px-6 py-8' para que o Card principal siga o padding do wrapper */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Usuários do Sistema
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="mt-2 text-muted-foreground">Carregando colaboradores...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-8">
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-6 max-w-md mx-auto">
+                <Shield className="h-12 w-12 mx-auto mb-4 text-destructive" />
+                <h3 className="text-lg font-semibold mb-2 text-destructive">Erro ao Carregar Colaboradores</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Não foi possível carregar a lista de colaboradores. Verifique se a função get_users_with_roles foi atualizada para não usar a tabela profiles.
                 </p>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Execute a migration: <code className="bg-muted px-2 py-1 rounded">20251120_update_get_users_function.sql</code>
+                </p>
+                <Button onClick={fetchUsers} variant="outline">
+                  Tentar Novamente
+                </Button>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {users.map((user) => (
-                  <div
-                    key={user.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-foreground">{user.nome}</h3>
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Criado em {new Date(user.created_at).toLocaleDateString('pt-BR')}
+            </div>
+          ) : users.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+              <p className="text-muted-foreground">Nenhum colaborador encontrado.</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Apenas usuários com role "admin" ou "logistica" são exibidos aqui.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {users.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-foreground">{user.nome}</h3>
+                    <p className="text-sm text-muted-foreground">{user.email}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Criado em {new Date(user.created_at).toLocaleDateString('pt-BR')}
+                    </p>
+                    {! user.role && (
+                      <p className="text-xs text-destructive mt-1">
+                        ⚠️ Sem role - contate administrador
                       </p>
-                      {! user.role && (
-                        <p className="text-xs text-destructive mt-1">
-                          ⚠️ Sem role - contate administrador
-                        </p>
-                      )}
-                    </div>
-
-                    <Select
-                      value={user.role || ''}
-                      onValueChange={(value) => handleUpdateUserRole(user.id, value as UserRole)}
-                    >
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {! user.role && <SelectItem value="">Selecione uma role</SelectItem>}
-                        <SelectItem value="admin">Administrador</SelectItem>
-                        <SelectItem value="logistica">Logística</SelectItem>
-                        <SelectItem value="armazem">Armazém</SelectItem>
-                        <SelectItem value="cliente">Cliente</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+
+                  <Select
+                    value={user.role || ''}
+                    onValueChange={(value) => handleUpdateUserRole(user.id, value as UserRole)}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {! user.role && <SelectItem value="">Selecione uma role</SelectItem>}
+                      <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="logistica">Logística</SelectItem>
+                      <SelectItem value="armazem">Armazém</SelectItem>
+                      <SelectItem value="cliente">Cliente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
